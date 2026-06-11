@@ -1,0 +1,48 @@
+(eagv3-s9) saikiran@Saikirans-Mac code % uv run python flow.py "Compare top 3 Hugging Face text-generation models sorted by likes."
+
+══════════════════════════════════════════════════════════════════════════════
+session s8-8b1e39ae  ─  query: Compare top 3 Hugging Face text-generation models sorted by likes.
+══════════════════════════════════════════════════════════════════════════════
+[memory.read] 7 hit(s) visible to every skill this run
+[n:1] planner            complete (4.8s)
+[browser] ── start ──────────────────────────────────────
+[browser] url       : https://huggingface.co/models
+[browser] goal      : Filter by Task: Text Generation, Sort by: Most Likes; extract the names, descriptions, and like counts of the top 3 models.
+[browser] force_path: None
+[browser] layer1: fetching HTML via httpx ...
+[browser] layer1: fetch ok — 331123 chars, final_url=https://huggingface.co/models
+[browser] layer1: extract → 1416 chars, is_useful=False
+[browser] layer1: extract insufficient — escalating
+[browser] layer2a: no selectors in metadata — skipping
+[browser] layer2b: running A11yDriver ...
+[browser._drive] A11yDriver: navigating to https://huggingface.co/models ...
+[browser._drive] A11yDriver: page loaded — https://huggingface.co/models
+[browser._drive] A11yDriver: rendered HTML = 331113 chars
+[browser._drive] A11yDriver: post-JS gateway block check → None
+[browser._drive] A11yDriver: driver.run() done — success=True  note=''
+[browser._drive] A11yDriver: extraction=trafilatura  1605 chars
+[browser] _follow_detail_pages: visiting 3 detail page(s): ['https://huggingface.co/deepseek-ai/DeepSeek-R1', 'https://huggingface.co/meta-llama/Meta-Llama-3-8B', 'https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct']
+[browser] _follow_detail_pages: https://huggingface.co/deepseek-ai/DeepSeek-R1 → 5000 chars
+[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Meta-Llama-3-8B → 5000 chars
+[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct → 5000 chars
+[browser._drive] A11yDriver: appended 15180 chars from detail pages — total extracted now 16787 chars
+[browser] layer2b: a11y done — success=True  gateway_blocked=False  note=''
+[browser] layer2b: ✓ a11y succeeded — returning a11y
+[n:2] browser            complete (19.7s)
+[n:3] distiller          complete (1.5s)
+  [debug:distiller] output = {"fields": {"model_1": "deepseek-ai/DeepSeek-R1 (5.35M likes)", "model_2": "openai/gpt-oss-20b (6.65M likes)", "model_3": "deepseek-ai/DeepSeek-V4-Pro (4.06M likes)"}, "comparison": {"winner": "openai/gpt-oss-20b", "reason": "It has the highest number of likes (6.65M) among the top 3 models identified in the browser output."}, "rationale": "The browser output provided a ranked list of the top 3 text-generation models by likes, which supports the field values and the comparison."}
+[n:5] critic             complete (1.1s)
+  [debug:critic] verdict   = pass
+  [debug:critic] rationale = The upstream output provides the three models with likes, identifies the highest-liked model, and includes a rationale, matching the requested comparison.
+  [debug:critic] full output = {"verdict": "pass", "rationale": "The upstream output provides the three models with likes, identifies the highest-liked model, and includes a rationale, matching the requested comparison."}
+[n:4] formatter          complete (2.6s)
+
+══════════════════════════════════════════════════════════════════════════════
+FINAL: Based on current Hugging Face data, here are the top 3 text-generation models ranked by likes:
+
+1. openai/gpt-oss-20b: 6.65M likes
+2. deepseek-ai/DeepSeek-R1: 5.35M likes
+3. deepseek-ai/DeepSeek-V4-Pro: 4.06M likes
+
+The openai/gpt-oss-20b model currently holds the top position with the highest number of likes.
+══════════════════════════════════════════════════════════════════════════════
