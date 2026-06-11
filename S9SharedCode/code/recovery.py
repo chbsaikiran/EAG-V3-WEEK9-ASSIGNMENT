@@ -123,6 +123,10 @@ def handle_critic_verdict(nid: str, result, graph, recovered_branches: dict,
         recovered_branches[target_nid] = True
         rationale = (result.output or {}).get("rationale", "(no rationale)")
         fr = f"critic failed target={target_nid} child={child_nid} rationale={rationale}"
+        print(f"  [debug:critic-fail] target={target_nid}  child={child_nid}")
+        print(f"  [debug:critic-fail] rationale = {rationale}")
+        print(f"  [debug:critic-fail] failure_report sent to recovery planner:")
+        print(f"    {fr}")
         rec_nid = graph.add_node("planner", inputs=["USER_QUERY"],
                                  metadata={"failure_report": fr,
                                            "recovers": target_nid,

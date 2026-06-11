@@ -263,13 +263,26 @@ class Executor:
                     started_at=time.time() - result.elapsed_s,
                     completed_at=time.time(),
                 ))
-                print(f"[{nid}] {graph.g.nodes[nid]['skill']:18s} "
+                skill_name = graph.g.nodes[nid]["skill"]
+                print(f"[{nid}] {skill_name:18s} "
                       f"{graph.g.nodes[nid]['status']:8s} "
                       f"({result.elapsed_s:.1f}s)"
                       + (f"  err={result.error[:80]}" if result.error else ""))
+                if skill_name == "distiller" and result.success:
+                    import json as _json
+                    print(f"  [debug:distiller] output = "
+                          f"{_json.dumps(result.output, default=str)[:600]}")
+                if skill_name == "critic" and result.success:
+                    import json as _json
+                    verdict   = (result.output or {}).get("verdict", "(missing)")
+                    rationale = (result.output or {}).get("rationale", "(missing)")
+                    print(f"  [debug:critic] verdict   = {verdict}")
+                    print(f"  [debug:critic] rationale = {rationale}")
+                    print(f"  [debug:critic] full output = "
+                          f"{_json.dumps(result.output, default=str)[:600]}")
 
                 if result.success:
-                    if graph.g.nodes[nid]["skill"] == "critic":
+                    if skill_name == "critic":
                         if handle_critic_verdict(nid, result, graph,
                                                  recovered_branches,
                                                  critic_fail_cap_hit):

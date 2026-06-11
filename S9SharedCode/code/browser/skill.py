@@ -38,6 +38,7 @@ from schemas import AgentResult, BrowserOutput, NodeSpec
 
 from .client import V9Client
 from .driver import A11yDriver, DriverConfig, DriverResult, SetOfMarksDriver
+import pdb
 
 
 # ── gateway-block detection ──────────────────────────────────────────────────
@@ -130,6 +131,7 @@ class BrowserSkill:
                  max_steps_a11y: int = 12,
                  max_steps_vision: int = 12,
                  wall_clock_s: float = 90.0,
+                 max_detail_pages: int = 3,
                  session: str | None = None):
         self.gateway_url = gateway_url
         self.agent_tag = agent_tag
@@ -138,6 +140,7 @@ class BrowserSkill:
         self.artifacts_root = Path(artifacts_root) if artifacts_root else None
         self.max_steps_a11y = max_steps_a11y
         self.max_steps_vision = max_steps_vision
+        self.max_detail_pages = max_detail_pages
         self.wall_clock_s = wall_clock_s
         # Forwarded to V9 so the gateway ledger can attribute each call to
         # the orchestrator session that drove it.
@@ -147,12 +150,13 @@ class BrowserSkill:
     async def run(self, node: NodeSpec) -> AgentResult:
         url = node.metadata.get("url") or (node.inputs[0] if node.inputs else "")
         goal = node.metadata.get("goal") or "extract main content"
-        # Optional escape hatch: skip the natural cascade and pin to a specific
-        # layer. Used by the spec's vision-escalation smoke test when the
-        # natural cascade would short-circuit on a richer earlier layer.
-        # Values: 'extract' | 'a11y' | 'vision'. Anything else is ignored.
         force_path = node.metadata.get("force_path")
+        print(f"[browser] ── start ──────────────────────────────────────")
+        print(f"[browser] url       : {url}")
+        print(f"[browser] goal      : {goal}")
+        print(f"[browser] force_path: {force_path}")
         if not url:
+            print(f"[browser] ✗ no url given — returning error immediately")
             return self._pack_error("", goal, "interaction_failed",
                                     "no url given (metadata.url or inputs[0])")
         t0 = time.time()
@@ -164,88 +168,109 @@ class BrowserSkill:
         )
 
         # ── Layer 1: extract ────────────────────────────────────────────────
-        # When the bare GET fails (403/405 from a WAF, connection refused, …)
-        # we do NOT bail out: anti-bot edges often serve a CAPTCHA *page* to
-        # a real browser session that they refuse via bare GET. Falling
-        # through to the Playwright layers lets _drive() detect the rendered
-        # CAPTCHA and surface gateway_blocked properly.
+        print(f"[browser] layer1: fetching HTML via httpx ...")
         layer1_http_error: str | None = None
         try:
             html, final_url = await _fetch_html(url)
+            print(f"[browser] layer1: fetch ok — {len(html)} chars, final_url={final_url}")
         except httpx.HTTPError as e:
             layer1_http_error = f"layer1 fetch failed: {e}"
             html, final_url = "", url
+            print(f"[browser] layer1: fetch FAILED — {layer1_http_error}")
 
         if html:
             block = detect_gateway_block(html)
             if block:
-                return self._pack_error(url, goal, "gateway_blocked",
-                                        f"gateway_blocked: {block} marker on {final_url}",
-                                        elapsed=time.time() - t0)
+                print(f"[browser] layer1: gateway block detected → '{block}' — returning blocked")
+                return self._pack(url, goal, "blocked", turns=0,
+                                  content=f"blocked: {block} on {final_url}",
+                                  final_url=final_url, elapsed=time.time() - t0)
             content = _extract(html)
-            if _is_useful_extract(content, goal):
+            useful = _is_useful_extract(content, goal)
+            print(f"[browser] layer1: extract → {len(content)} chars, is_useful={useful}")
+            if useful:
+                print(f"[browser] layer1: ✓ extract sufficient — returning extract")
                 return self._pack(url, goal, "extract", turns=0,
                                   content=content, final_url=final_url,
                                   elapsed=time.time() - t0)
+            print(f"[browser] layer1: extract insufficient — escalating")
+        else:
+            print(f"[browser] layer1: no HTML — skipping extract/block-check, escalating")
 
         # ── Layer 2a: deterministic selectors (only if caller gave any) ────
-        # Tightly scoped: this branch only fires when the Planner / caller
-        # supplies `metadata.selectors`. The convention is metadata.selectors
-        # = list of {action: "click"|"fill", selector, value?}. When no
-        # selectors are given we go straight to a11y. We never try to *guess*
-        # selectors here — that would re-create the brittleness Layer 2b
-        # exists to solve.
         selectors = node.metadata.get("selectors") or []
         if selectors:
+            print(f"[browser] layer2a: trying {len(selectors)} deterministic selector(s) ...")
             det = await self._try_deterministic(url, goal, selectors)
             if det is not None:
+                print(f"[browser] layer2a: deterministic result success={det.success}")
                 return det if det.success else self._pack_error(
                     url, goal, "interaction_failed",
                     det.error or "deterministic path failed",
                     elapsed=time.time() - t0,
                 )
+            print(f"[browser] layer2a: deterministic returned None — escalating to a11y")
+        else:
+            print(f"[browser] layer2a: no selectors in metadata — skipping")
 
         # ── Layer 2b: a11y ──────────────────────────────────────────────────
         if force_path == "vision":
-            # Skip a11y entirely — caller wants Layer 3 explicitly.
+            print(f"[browser] layer2b: skipped (force_path=vision)")
             a11y_result = DriverResult(success=False, note="skipped by force_path=vision")
         else:
+            print(f"[browser] layer2b: running A11yDriver ...")
             a11y_result = await self._drive(
                 A11yDriver, url, goal, client, artifacts_dir,
                 self.a11y_provider_pin, self.max_steps_a11y,
+                max_detail_pages=self.max_detail_pages,
             )
+            print(f"[browser] layer2b: a11y done — success={a11y_result.success}  "
+                  f"gateway_blocked={getattr(a11y_result,'gateway_blocked',False)}  "
+                  f"note={a11y_result.note!r}")
         if getattr(a11y_result, "gateway_blocked", False):
-            return self._pack_error(url, goal, "gateway_blocked",
-                                    a11y_result.note or "gateway_blocked after JS render",
-                                    elapsed=time.time() - t0)
+            print(f"[browser] layer2b: gateway block after JS render — returning blocked")
+            return self._pack(url, goal, "blocked", turns=0,
+                              content=f"blocked: {a11y_result.note or 'gateway blocked after JS render'}",
+                              elapsed=time.time() - t0)
         if a11y_result.success:
+            print(f"[browser] layer2b: ✓ a11y succeeded — returning a11y")
             return self._pack_driver("a11y", url, goal, a11y_result,
                                      final_url=a11y_result.final_url,
                                      elapsed=time.time() - t0)
+        print(f"[browser] layer2b: a11y failed — escalating to vision")
 
         # ── Layer 3: vision ─────────────────────────────────────────────────
+        print(f"[browser] layer3: running SetOfMarksDriver ...")
         vis_result = await self._drive(
             SetOfMarksDriver, url, goal, client, artifacts_dir,
             self.vision_provider_pin, self.max_steps_vision,
+            max_detail_pages=self.max_detail_pages,
         )
+        print(f"[browser] layer3: vision done — success={vis_result.success}  "
+              f"gateway_blocked={getattr(vis_result,'gateway_blocked',False)}  "
+              f"note={vis_result.note!r}")
         if getattr(vis_result, "gateway_blocked", False):
-            return self._pack_error(url, goal, "gateway_blocked",
-                                    vis_result.note or "gateway_blocked after JS render",
-                                    elapsed=time.time() - t0)
+            print(f"[browser] layer3: gateway block after JS render — returning blocked")
+            return self._pack(url, goal, "blocked", turns=0,
+                              content=f"blocked: {vis_result.note or 'gateway blocked after JS render'}",
+                              elapsed=time.time() - t0)
         if vis_result.success:
+            print(f"[browser] layer3: ✓ vision succeeded — returning vision")
             return self._pack_driver("vision", url, goal, vis_result,
                                      final_url=vis_result.final_url,
                                      elapsed=time.time() - t0)
 
         last_err = (vis_result.note or a11y_result.note
                     or layer1_http_error or "all layers exhausted")
-        return self._pack_error(url, goal, "interaction_failed",
-                                f"all layers exhausted; last: {last_err}",
-                                elapsed=time.time() - t0)
+        print(f"[browser] layer3: vision failed — all layers exhausted")
+        print(f"[browser] ✗ returning blocked — last_err: {last_err}")
+        return self._pack(url, goal, "blocked", turns=0,
+                          content=f"blocked: all layers exhausted; last: {last_err}",
+                          final_url=final_url, elapsed=time.time() - t0)
 
     # ── per-layer driver runs ──────────────────────────────────────────────
     async def _drive(self, DriverCls, url, goal, client, artifacts_dir,
-                     provider_pin, max_steps):
+                     provider_pin, max_steps, max_detail_pages: int = 0):
         # Place each layer's per-turn artifacts under its own subdir so
         # turn_##_* filenames from one layer don't overwrite another's.
         if artifacts_dir:
@@ -270,17 +295,19 @@ class BrowserSkill:
             )
             page = await ctx.new_page()
             try:
+                print(f"[browser._drive] {DriverCls.__name__}: navigating to {url} ...")
                 await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                # Last-chance gateway-block check on the rendered page (some
-                # walls only show up after JS executes).
-                kind = detect_gateway_block(await page.content())
+                print(f"[browser._drive] {DriverCls.__name__}: page loaded — {page.url}")
+                rendered_html = await page.content()
+                print(f"[browser._drive] {DriverCls.__name__}: rendered HTML = {len(rendered_html)} chars")
+                kind = detect_gateway_block(rendered_html)
+                print(f"[browser._drive] {DriverCls.__name__}: post-JS gateway block check → {kind!r}")
                 if kind:
                     await browser.close()
                     out = DriverResult(
                         success=False,
                         note=f"gateway_blocked ({kind}) detected after JS render at {page.url}",
                     )
-                    # Annotation BrowserSkill reads to propagate the code.
                     out.gateway_blocked = True
                     return out
                 await asyncio.sleep(1.0)
@@ -292,20 +319,158 @@ class BrowserSkill:
                 # Augment the result with final_url + extracted text so
                 # _pack_driver can fill BrowserOutput uniformly.
                 result = await drv.run()
+                print(f"[browser._drive] {DriverCls.__name__}: driver.run() done — "
+                      f"success={result.success}  note={result.note!r}")
                 result.final_url = page.url
                 result.extracted = ""
                 try:
-                    result.extracted = _extract(await page.content())
-                except Exception:                          # noqa: BLE001
-                    pass
+                    page_html = await page.content()
+                    traf = _extract(page_html)
+                    if len(traf) >= 500:
+                        result.extracted = traf
+                        print(f"[browser._drive] {DriverCls.__name__}: extraction=trafilatura  "
+                              f"{len(result.extracted)} chars")
+                    else:
+                        # Trafilatura stripped too much — common for React/SPA apps
+                        # like HuggingFace where model cards are not static HTML.
+                        # inner_text gives every visible text node on the rendered page.
+                        inner = await page.inner_text("body")
+                        result.extracted = inner[:15000]
+                        print(f"[browser._drive] {DriverCls.__name__}: extraction=inner_text "
+                              f"(trafilatura only {len(traf)} chars)  "
+                              f"{len(result.extracted)} chars")
+                except Exception as _e:                    # noqa: BLE001
+                    print(f"[browser._drive] {DriverCls.__name__}: extraction failed — {_e}")
                 result.turns = len(drv.steps)
                 result.actions = [
                     {"turn": s.turn, "actions": s.actions, "outcome": s.outcome}
                     for s in drv.steps
                 ]
+                # After the driver navigates (and filters/sorts) a listing page,
+                # open the top N item detail pages so downstream skills receive
+                # real per-item data rather than the thin listing-page snapshot.
+                # This generalises to any listing: model directories, product
+                # grids, search results, leaderboards, etc. — if no depth-2
+                # same-domain links are found (e.g. single-page lookup) the
+                # method returns an empty string and nothing changes.
+                if result.success and max_detail_pages > 0:
+                    detail_text = await self._follow_detail_pages(
+                        page, max_detail_pages
+                    )
+                    if detail_text:
+                        result.extracted = result.extracted + "\n\n" + detail_text
+                        print(f"[browser._drive] {DriverCls.__name__}: "
+                              f"appended {len(detail_text)} chars from detail pages — "
+                              f"total extracted now {len(result.extracted)} chars")
                 return result
             finally:
                 await browser.close()
+
+    # First path-segment words that reliably indicate navigation / feature
+    # pages rather than item-detail pages.  Kept small and general — extend
+    # only when a new site type proves necessary.
+    _NAV_PREFIXES: frozenset[str] = frozenset({
+        "join", "login", "signup", "signin", "register", "logout",
+        "about", "contact", "careers", "press", "legal", "privacy", "terms",
+        "docs", "documentation", "help", "support", "faq",
+        "blog", "news", "updates", "changelog",
+        "pricing", "enterprise", "pro", "business",
+        "api", "developers", "developer",
+        "status", "community", "discord", "forum", "forums",
+        # HuggingFace top-level feature paths that are NOT model cards
+        "inference", "spaces", "datasets", "collections",
+        "tasks", "tags", "papers", "leaderboards",
+    })
+
+    async def _follow_detail_pages(self, page, max_pages: int) -> str:
+        """Visit the top N item-detail links on the current listing page and
+        return their extracted text concatenated.
+
+        Two-tier link selection (generalises to model directories, product
+        grids, search results, leaderboards, GitHub trending, etc.):
+
+          Tier 1 — scope to <main> / [role=main]:
+            Most modern sites place the result grid inside a semantic main
+            element, keeping navbar and footer links out of scope.
+
+          Tier 2 — filter by path structure:
+            - same domain, path depth >= 2
+            - first path segment NOT in _NAV_PREFIXES (excludes feature/nav
+              paths like /join/discord or /inference/models)
+            - non-trivial link text (> 3 chars)
+            - links appear in DOM order = visual ranking order on listing pages
+
+        Content is capped at 5 000 chars per page to stay within context limits.
+        """
+        from urllib.parse import urlparse
+
+        current_url = page.url
+        base_domain = urlparse(current_url).netloc
+
+        # Tier 1: scope to semantic main content — avoids nav/footer/sidebar
+        try:
+            link_data = await page.eval_on_selector_all(
+                "main a[href], [role='main'] a[href]",
+                "els => els.map(e => ({href: e.href, text: e.innerText.trim().slice(0,120)}))",
+            )
+            if len(link_data) < 3:
+                # No semantic main or too few links — fall back to full body
+                print(f"[browser] _follow_detail_pages: main has {len(link_data)} link(s), "
+                      f"falling back to body")
+                link_data = await page.eval_on_selector_all(
+                    "a[href]",
+                    "els => els.map(e => ({href: e.href, text: e.innerText.trim().slice(0,120)}))",
+                )
+        except Exception as _e:
+            print(f"[browser] _follow_detail_pages: link enumeration failed — {_e}")
+            return ""
+
+        # Tier 2: filter to content-like depth-2 same-domain links
+        seen: set[str] = set()
+        candidates: list[str] = []
+        for item in link_data:
+            href = (item.get("href") or "").strip()
+            text = (item.get("text") or "").strip()
+            if not href or len(text) < 3:
+                continue
+            parsed     = urlparse(href)
+            path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+            first_seg  = path_parts[0].lower() if path_parts else ""
+            if (parsed.netloc == base_domain
+                    and len(path_parts) >= 2
+                    and first_seg not in self._NAV_PREFIXES
+                    and href not in seen
+                    and href != current_url):
+                seen.add(href)
+                candidates.append(href)
+            if len(candidates) >= max_pages:
+                break
+
+        if not candidates:
+            print(f"[browser] _follow_detail_pages: no content links found — skipping")
+            return ""
+
+        print(f"[browser] _follow_detail_pages: visiting {len(candidates)} detail page(s): "
+              f"{candidates}")
+
+        parts: list[str] = []
+        for href in candidates:
+            try:
+                await page.goto(href, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(0.5)
+                html    = await page.content()
+                content = _extract(html)
+                if len(content) < 300:
+                    content = (await page.inner_text("body"))[:5000]
+                else:
+                    content = content[:5000]
+                if content.strip():
+                    parts.append(f"--- {page.url} ---\n{content.strip()}")
+                    print(f"[browser] _follow_detail_pages: {page.url} → {len(content)} chars")
+            except Exception as _e:
+                print(f"[browser] _follow_detail_pages: {href} failed — {_e}")
+
+        return "\n\n".join(parts)
 
     async def _try_deterministic(self, url, goal, selectors) -> AgentResult | None:
         """Runs caller-supplied selector instructions through Playwright. Each
@@ -361,10 +526,22 @@ class BrowserSkill:
 
     def _pack_driver(self, path, url, goal, drv_result,
                      *, final_url, elapsed) -> AgentResult:
+        extracted = getattr(drv_result, "extracted", None) or ""
+        note      = getattr(drv_result, "note", "") or ""
+        # Always lead with the source URL so the downstream distiller includes
+        # it in its output and the critic can verify the data is sourced rather
+        # than fabricated from parametric memory.
+        source_line = f"Source URL: {final_url or url}"
+        parts = [source_line]
+        if note:
+            parts.append(f"Agent summary: {note}")
+        if extracted:
+            parts.append(extracted)
+        content = "\n\n".join(parts)
         out = BrowserOutput(
             url=url, goal=goal, path=path,
             turns=getattr(drv_result, "turns", 0) or 0,
-            content=getattr(drv_result, "extracted", None) or None,
+            content=content or None,
             actions=getattr(drv_result, "actions", []) or [],
             final_url=final_url,
         )
