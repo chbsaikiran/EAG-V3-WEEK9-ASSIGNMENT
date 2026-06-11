@@ -326,13 +326,30 @@ class BrowserSkill:
                 try:
                     page_html = await page.content()
                     traf = _extract(page_html)
-                    if len(traf) >= 500:
+                    if max_detail_pages > 0:
+                        # Listing page mode. Two cases:
+                        # • Trafilatura ≥ 3000 chars → it extracted real listing content
+                        #   (product names, prices, specs on e-commerce sites). Use it
+                        #   as the listing snapshot so the distiller has actual data even
+                        #   when detail-page links can't be followed.
+                        # • Trafilatura < 3000 chars → it only got navigation/boilerplate
+                        #   (common on React/SPA sites like HuggingFace). Start empty and
+                        #   rely on the ranking context built in _follow_detail_pages.
+                        if len(traf) >= 3000:
+                            result.extracted = traf[:5000]
+                            print(f"[browser._drive] {DriverCls.__name__}: listing mode — "
+                                  f"using trafilatura ({len(traf)} chars → capped at 5000)")
+                        else:
+                            result.extracted = ""
+                            print(f"[browser._drive] {DriverCls.__name__}: listing mode — "
+                                  f"skipping thin trafilatura ({len(traf)} chars); "
+                                  f"ranking context comes from _follow_detail_pages")
+                    elif len(traf) >= 500:
                         result.extracted = traf
                         print(f"[browser._drive] {DriverCls.__name__}: extraction=trafilatura  "
                               f"{len(result.extracted)} chars")
                     else:
-                        # Trafilatura stripped too much — common for React/SPA apps
-                        # like HuggingFace where model cards are not static HTML.
+                        # Trafilatura stripped too much — common for React/SPA apps.
                         # inner_text gives every visible text node on the rendered page.
                         inner = await page.inner_text("body")
                         result.extracted = inner[:15000]
@@ -358,9 +375,10 @@ class BrowserSkill:
                         page, max_detail_pages
                     )
                     if detail_text:
-                        result.extracted = result.extracted + "\n\n" + detail_text
+                        base = result.extracted.strip()
+                        result.extracted = (base + "\n\n" + detail_text) if base else detail_text
                         print(f"[browser._drive] {DriverCls.__name__}: "
-                              f"appended {len(detail_text)} chars from detail pages — "
+                              f"detail pages added {len(detail_text)} chars — "
                               f"total extracted now {len(result.extracted)} chars")
                 return result
             finally:
@@ -380,6 +398,22 @@ class BrowserSkill:
         # HuggingFace top-level feature paths that are NOT model cards
         "inference", "spaces", "datasets", "collections",
         "tasks", "tags", "papers", "leaderboards",
+    })
+
+    # Path-segment keywords that identify auth / transactional pages regardless
+    # of which first segment the site uses (e.g. Amazon uses /ap/signin, /gp/cart).
+    # Checked against ALL path segments — not just the first — so it catches sites
+    # like Amazon where the meaningful keyword is buried one level deep.
+    _NAV_PATH_KEYWORDS: frozenset[str] = frozenset({
+        "signin", "sign-in",
+        "login", "logout",
+        "signup", "sign-up",
+        "register",
+        "cart", "checkout",
+        "wishlist", "wish-list",
+        "order-history", "your-orders",
+        "payment", "billing",
+        "returns",
     })
 
     async def _follow_detail_pages(self, page, max_pages: int) -> str:
@@ -425,24 +459,36 @@ class BrowserSkill:
             print(f"[browser] _follow_detail_pages: link enumeration failed — {_e}")
             return ""
 
-        # Tier 2: filter to content-like depth-2 same-domain links
+        # Tier 2: filter to content-like depth-2 same-domain links.
+        # Keep (href, card_text) pairs — card_text is the link's innerText which
+        # on listing/grid pages typically includes the item name + key metric
+        # (e.g. "deepseek-ai/DeepSeek-R1\nText Generation\n13.4k\nUpdated 2d ago").
         seen: set[str] = set()
-        candidates: list[str] = []
+        candidates: list[tuple[str, str]] = []  # (href, card_text)
         for item in link_data:
             href = (item.get("href") or "").strip()
             text = (item.get("text") or "").strip()
-            if not href or len(text) < 3:
+            # Nav flyout items always have short text ("Baby Wishlist" = 13 chars,
+            # "Your Account" = 12). Product/content card links always have long text
+            # (product name + price + specs, or article headline). 25 chars separates
+            # them reliably without being site-specific.
+            if not href or len(text) < 25:
                 continue
             parsed     = urlparse(href)
             path_parts = [p for p in parsed.path.strip("/").split("/") if p]
             first_seg  = path_parts[0].lower() if path_parts else ""
+            # Check ALL path segments for transactional/auth keywords — catches
+            # sites like Amazon where /ap/signin or /gp/cart have the nav keyword
+            # one level deep rather than at the first segment.
+            path_segs_lower = {seg.lower() for seg in path_parts}
             if (parsed.netloc == base_domain
                     and len(path_parts) >= 2
                     and first_seg not in self._NAV_PREFIXES
+                    and not (path_segs_lower & self._NAV_PATH_KEYWORDS)
                     and href not in seen
                     and href != current_url):
                 seen.add(href)
-                candidates.append(href)
+                candidates.append((href, text))
             if len(candidates) >= max_pages:
                 break
 
@@ -450,20 +496,59 @@ class BrowserSkill:
             print(f"[browser] _follow_detail_pages: no content links found — skipping")
             return ""
 
+        hrefs = [c[0] for c in candidates]
         print(f"[browser] _follow_detail_pages: visiting {len(candidates)} detail page(s): "
-              f"{candidates}")
+              f"{hrefs}")
 
-        parts: list[str] = []
-        for href in candidates:
+        # Build an explicit ranked listing header from card link text.
+        # This gives the distiller unambiguous rank order + sort metric without
+        # relying on the full page inner_text (which is navigation-heavy on SPAs).
+        #
+        # Key challenge: a card card may show multiple large numbers (e.g. HuggingFace
+        # shows downloads AND likes). We read the sort criterion from the URL params,
+        # then extract the LAST formatted number (with k/M/B/T suffix) from the card
+        # text as the sort-metric value — on virtually all listing pages the primary
+        # sort metric is displayed last / at the card's trailing edge.
+        import re as _re
+        from urllib.parse import parse_qs as _pqs
+        _qs = _pqs(urlparse(current_url).query)
+        # Common sort param names across sites
+        sort_by = next(
+            (v[0] for k, v in _qs.items()
+             if k.lower() in ("sort", "order", "orderby", "sortby", "s") and v),
+            None,
+        )
+        ranking_lines = [
+            f"RANKED LISTING FROM PAGE (sorted by: {sort_by or 'page default'}):",
+            f"  Source URL: {current_url}",
+            f"  IMPORTANT: Display position IS the authoritative rank.",
+            f"  #1 = highest {sort_by or 'metric'}, do NOT re-sort by any number you see.",
+        ]
+        for i, (href, card_text) in enumerate(candidates, 1):
+            # Find all numbers formatted with a magnitude suffix (k/M/B/T).
+            # The LAST such number is the primary sort metric on nearly all listing pages
+            # (likes, stars, downloads, etc. shown at the card edge).
+            fmt_nums = _re.findall(r'\d+(?:\.\d+)?[kKmMbBtT]', card_text)
+            sort_label = (f"  [{sort_by}={fmt_nums[-1]}]"
+                          if sort_by and fmt_nums else "")
+            one_line = " | ".join(
+                seg.strip() for seg in card_text.splitlines() if seg.strip()
+            )
+            ranking_lines.append(f"  #{i}: {href}{sort_label}  [card: {one_line}]")
+        ranking_header = "\n".join(ranking_lines)
+        print(f"[browser] _follow_detail_pages: ranking header:\n{ranking_header}")
+
+        parts: list[str] = [ranking_header]
+        for href, _ in candidates:
             try:
                 await page.goto(href, wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(0.5)
                 html    = await page.content()
                 content = _extract(html)
                 if len(content) < 300:
-                    content = (await page.inner_text("body"))[:5000]
+                    content = (await page.inner_text("body"))[:2500]
                 else:
-                    content = content[:5000]
+                    content = content[:2500]
                 if content.strip():
                     parts.append(f"--- {page.url} ---\n{content.strip()}")
                     print(f"[browser] _follow_detail_pages: {page.url} → {len(content)} chars")

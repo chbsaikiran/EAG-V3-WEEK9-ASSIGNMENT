@@ -1,13 +1,13 @@
 (eagv3-s9) saikiran@Saikirans-Mac code % uv run python flow.py "Compare top 3 Hugging Face text-generation models sorted by likes."
 
 ══════════════════════════════════════════════════════════════════════════════
-session s8-8b1e39ae  ─  query: Compare top 3 Hugging Face text-generation models sorted by likes.
+session s8-4590da7b  ─  query: Compare top 3 Hugging Face text-generation models sorted by likes.
 ══════════════════════════════════════════════════════════════════════════════
-[memory.read] 7 hit(s) visible to every skill this run
-[n:1] planner            complete (4.8s)
+[memory.read] 8 hit(s) visible to every skill this run
+[n:1] planner            complete (4.6s)
 [browser] ── start ──────────────────────────────────────
 [browser] url       : https://huggingface.co/models
-[browser] goal      : Filter by Task: Text Generation, Sort by: Most Likes; extract the names, descriptions, and like counts of the top 3 models.
+[browser] goal      : Filter by Task: Text Generation, Sort by: Most Likes; then extract the names, descriptions, and like counts of the top 3 models.
 [browser] force_path: None
 [browser] layer1: fetching HTML via httpx ...
 [browser] layer1: fetch ok — 331123 chars, final_url=https://huggingface.co/models
@@ -20,29 +20,171 @@ session s8-8b1e39ae  ─  query: Compare top 3 Hugging Face text-generation mode
 [browser._drive] A11yDriver: rendered HTML = 331113 chars
 [browser._drive] A11yDriver: post-JS gateway block check → None
 [browser._drive] A11yDriver: driver.run() done — success=True  note=''
-[browser._drive] A11yDriver: extraction=trafilatura  1605 chars
+[browser._drive] A11yDriver: listing mode — skipping inner_text (trafilatura=1605 chars); ranking context comes from _follow_detail_pages
 [browser] _follow_detail_pages: visiting 3 detail page(s): ['https://huggingface.co/deepseek-ai/DeepSeek-R1', 'https://huggingface.co/meta-llama/Meta-Llama-3-8B', 'https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct']
-[browser] _follow_detail_pages: https://huggingface.co/deepseek-ai/DeepSeek-R1 → 5000 chars
-[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Meta-Llama-3-8B → 5000 chars
-[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct → 5000 chars
-[browser._drive] A11yDriver: appended 15180 chars from detail pages — total extracted now 16787 chars
+[browser] _follow_detail_pages: ranking header:
+RANKED LISTING FROM PAGE (sorted by: likes):
+  Source URL: https://huggingface.co/models?pipeline_tag=text-generation&sort=likes
+  IMPORTANT: Display position IS the authoritative rank.
+  #1 = highest likes, do NOT re-sort by any number you see.
+  #1: https://huggingface.co/deepseek-ai/DeepSeek-R1  [likes=13.4k]  [card: deepseek-ai/DeepSeek-R1 | Text Generation | • | 685B | • | Updated Mar 27, 2025 | • | 5.35M | • | • | 13.4k]
+  #2: https://huggingface.co/meta-llama/Meta-Llama-3-8B  [likes=6.57k]  [card: meta-llama/Meta-Llama-3-8B | Text Generation | • | 8B | • | Updated Sep 27, 2024 | • | 1.29M | • | • | 6.57k]
+  #3: https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct  [likes=6.05k]  [card: meta-llama/Llama-3.1-8B-Instruct | Text Generation | • | 8B | • | Updated Sep 25, 2024 | • | 9.89M | • | • | 6.05k]
+[browser] _follow_detail_pages: https://huggingface.co/deepseek-ai/DeepSeek-R1 → 2500 chars
+[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Meta-Llama-3-8B → 2500 chars
+[browser] _follow_detail_pages: https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct → 2500 chars
+[browser._drive] A11yDriver: detail pages added 8503 chars — total extracted now 8503 chars
 [browser] layer2b: a11y done — success=True  gateway_blocked=False  note=''
 [browser] layer2b: ✓ a11y succeeded — returning a11y
-[n:2] browser            complete (19.7s)
-[n:3] distiller          complete (1.5s)
-  [debug:distiller] output = {"fields": {"model_1": "deepseek-ai/DeepSeek-R1 (5.35M likes)", "model_2": "openai/gpt-oss-20b (6.65M likes)", "model_3": "deepseek-ai/DeepSeek-V4-Pro (4.06M likes)"}, "comparison": {"winner": "openai/gpt-oss-20b", "reason": "It has the highest number of likes (6.65M) among the top 3 models identified in the browser output."}, "rationale": "The browser output provided a ranked list of the top 3 text-generation models by likes, which supports the field values and the comparison."}
-[n:5] critic             complete (1.1s)
+[n:2] browser            complete (19.8s)
+  [debug:browser] content length = 8586 chars
+  [debug:browser] content preview (first 400 chars): 'Source URL: https://huggingface.co/models?pipeline_tag=text-generation&sort=likes\n\nRANKED LISTING FROM PAGE (sorted by: likes):\n  Source URL: https://huggingface.co/models?pipeline_tag=text-generation&sort=likes\n  IMPORTANT: Display position IS the authoritative rank.\n  #1 = highest likes, do NOT re-sort by any number you see.\n  #1: https://huggingface.co/deepseek-ai/DeepSeek-R1  [likes=13.4k]  [c'
+[n:3] distiller          complete (1.4s)
+  [debug:distiller] output = {"fields": {"model_1": "deepseek-ai/DeepSeek-R1 (13.4k likes)", "model_2": "meta-llama/Meta-Llama-3-8B (6.57k likes)", "model_3": "meta-llama/Llama-3.1-8B-Instruct (6.05k likes)"}, "comparison": {"winner": "deepseek-ai/DeepSeek-R1", "reason": "It holds the highest number of likes (13.4k) among the top 3 text-generation models listed on Hugging Face."}, "rationale": "The ranked listing provided in the browser output explicitly identifies these three models and their respective like counts."}
+[n:5] critic             complete (0.9s)
   [debug:critic] verdict   = pass
-  [debug:critic] rationale = The upstream output provides the three models with likes, identifies the highest-liked model, and includes a rationale, matching the requested comparison.
-  [debug:critic] full output = {"verdict": "pass", "rationale": "The upstream output provides the three models with likes, identifies the highest-liked model, and includes a rationale, matching the requested comparison."}
-[n:4] formatter          complete (2.6s)
+  [debug:critic] rationale = All required fields are present and the claims are consistent with the provided upstream output.
+  [debug:critic] full output = {"verdict": "pass", "rationale": "All required fields are present and the claims are consistent with the provided upstream output."}
+[n:4] formatter          complete (3.0s)
+  [debug:formatter] final_answer = As of the latest data, the top 3 text-generation models on Hugging Face, ranked by their number of likes, are as follows:
+
+1. deepseek-ai/DeepSeek-R1: 13.4k likes
+2. meta-llama/Meta-Llama-3-8B: 6.57k likes
+3. meta-llama/Llama-3.1-8B-Instruct: 6.05k likes
+
+The clear leader is deepseek-ai/DeepSeek-R1, which holds significantly more likes than the other two models in the top three.
 
 ══════════════════════════════════════════════════════════════════════════════
-FINAL: Based on current Hugging Face data, here are the top 3 text-generation models ranked by likes:
+FINAL: As of the latest data, the top 3 text-generation models on Hugging Face, ranked by their number of likes, are as follows:
 
-1. openai/gpt-oss-20b: 6.65M likes
-2. deepseek-ai/DeepSeek-R1: 5.35M likes
-3. deepseek-ai/DeepSeek-V4-Pro: 4.06M likes
+1. deepseek-ai/DeepSeek-R1: 13.4k likes
+2. meta-llama/Meta-Llama-3-8B: 6.57k likes
+3. meta-llama/Llama-3.1-8B-Instruct: 6.05k likes
 
-The openai/gpt-oss-20b model currently holds the top position with the highest number of likes.
+The clear leader is deepseek-ai/DeepSeek-R1, which holds significantly more likes than the other two models in the top three.
+══════════════════════════════════════════════════════════════════════════════
+
+
+
+
+
+
+
+
+(eagv3-s9) saikiran@Saikirans-Mac code % uv run python flow.py "Compare 3 laptops under ₹80,000 on amazon.in"
+
+══════════════════════════════════════════════════════════════════════════════
+session s8-f13411b2  ─  query: Compare 3 laptops under ₹80,000 on amazon.in
+══════════════════════════════════════════════════════════════════════════════
+[memory.read] 8 hit(s) visible to every skill this run
+[n:1] planner            complete (4.7s)
+[browser] ── start ──────────────────────────────────────
+[browser] url       : https://www.amazon.in/s?k=laptops+under+80000
+[browser] goal      : Search for laptops, apply filter for price under 80000 INR, sort by featured or best-selling, and extract the top 3 laptop names, prices, and key specifications.
+[browser] force_path: None
+[browser] layer1: fetching HTML via httpx ...
+[browser] layer1: fetch ok — 1411159 chars, final_url=https://www.amazon.in/s?k=laptops+under+80000
+[browser] layer1: extract → 6885 chars, is_useful=False
+[browser] layer1: extract insufficient — escalating
+[browser] layer2a: no selectors in metadata — skipping
+[browser] layer2b: running A11yDriver ...
+[browser._drive] A11yDriver: navigating to https://www.amazon.in/s?k=laptops+under+80000 ...
+[browser._drive] A11yDriver: page loaded — https://www.amazon.in/s?k=laptops+under+80000
+[browser._drive] A11yDriver: rendered HTML = 1668639 chars
+[browser._drive] A11yDriver: post-JS gateway block check → None
+[browser._drive] A11yDriver: driver.run() done — success=True  note=''
+[browser._drive] A11yDriver: listing mode — using trafilatura (5407 chars → capped at 5000)
+[browser] _follow_detail_pages: main has 0 link(s), falling back to body
+[browser] _follow_detail_pages: visiting 3 detail page(s): ['https://www.amazon.in/hz5/yourmembershipsandsubscriptions?ref_=nav_AccountFlyout_digital_subscriptions', 'https://www.amazon.in/hz/mycd/myx?pageType=content&ref_=nav_AccountFlyout_myk', 'https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc']
+[browser] _follow_detail_pages: ranking header:
+RANKED LISTING FROM PAGE (sorted by: exact-aware-popularity-rank):
+  Source URL: https://www.amazon.in/s?k=laptops+under+80000&s=exact-aware-popularity-rank&qid=1781140986&ref=sr_st_exact-aware-popularity-rank&ds=v1%3AsJ%2BllqDm5OQRDRguLyH2gArSWoo0TOk7oKLgpn7n3b4
+  IMPORTANT: Display position IS the authoritative rank.
+  #1 = highest exact-aware-popularity-rank, do NOT re-sort by any number you see.
+  #1: https://www.amazon.in/hz5/yourmembershipsandsubscriptions?ref_=nav_AccountFlyout_digital_subscriptions  [card: Memberships & Subscriptions]
+  #2: https://www.amazon.in/hz/mycd/myx?pageType=content&ref_=nav_AccountFlyout_myk  [card: Manage Your Content and Devices]
+  #3: https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc  [card: Health, Household & Personal Care]
+[browser] _follow_detail_pages: https://www.amazon.in/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fwww.amazon.in%2Fhz5%2Fyourmembershipsandsubscriptions%3Fref_%3Dnav_AccountFlyout_digital_subscriptions&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_swa_in&openid.mode=checkid_setup&language=en_IN&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amazon&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0 → 515 chars
+[browser] _follow_detail_pages: https://www.amazon.in/ap/signin?clientContext=259-6535227-1254324&openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fwww.amazon.in%2Fhz%2Fmycd%2Fmyx&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=inflex&openid.mode=checkid_setup&marketPlaceId=INAmazon&language=en_IN&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&language=en → 322 chars
+[browser] _follow_detail_pages: https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc → 2500 chars
+[browser._drive] A11yDriver: detail pages added 5237 chars — total extracted now 10239 chars
+[browser] layer2b: a11y done — success=True  gateway_blocked=False  note=''
+[browser] layer2b: ✓ a11y succeeded — returning a11y
+[n:2] browser            complete (26.4s)
+  [debug:browser] content length = 10435 chars
+  [debug:browser] content preview (first 400 chars): 'Source URL: https://www.amazon.in/s?k=laptops+under+80000&s=exact-aware-popularity-rank&qid=1781140986&ref=sr_st_exact-aware-popularity-rank&ds=v1%3AsJ%2BllqDm5OQRDRguLyH2gArSWoo0TOk7oKLgpn7n3b4\n\nCheck each product page for other buying options.\n500+ bought in past month\n2000 Off on HDFC Banks Credit Cards2000 Off on HDFC Banks Credit Cards\nFREE delivery Sat, 13 Jun\nOr fastest delivery Tomorrow 8 '
+[n:3] distiller          complete (1.5s)
+  [debug:distiller] output = {"fields": {"laptop_1": {"model": "ASUS Vivobook 16", "price": "\u20b963,990", "specs": "13th Gen Intel Core i5-13420H, 16GB RAM, 512GB SSD"}, "laptop_2": {"model": "Apple 2026 MacBook Neo 13\"", "price": "\u20b963,990", "specs": "A18 Pro chip"}, "laptop_3": {"model": "ASUS Vivobook 15", "price": "\u20b956,990", "specs": "AMD Ryzen 7 5825U, 16GB RAM, 512GB SSD, FHD 15.6\""}}, "rationale": "The laptop models, prices, and specifications were extracted directly from the browser node's final output summary."}
+[n:5] critic             complete (1.1s)
+  [debug:critic] verdict   = fail
+  [debug:critic] rationale = The Apple 2026 MacBook Neo 13" priced at ₹63,990 is implausible and likely fabricated, as no supporting source was provided; the output includes unsupported information.
+  [debug:critic] full output = {"verdict": "fail", "rationale": "The Apple 2026 MacBook Neo 13\" priced at \u20b963,990 is implausible and likely fabricated, as no supporting source was provided; the output includes unsupported information."}
+  [debug:critic-fail] target=n:3  child=n:4
+  [debug:critic-fail] rationale = The Apple 2026 MacBook Neo 13" priced at ₹63,990 is implausible and likely fabricated, as no supporting source was provided; the output includes unsupported information.
+  [debug:critic-fail] failure_report sent to recovery planner:
+    critic failed target=n:3 child=n:4 rationale=The Apple 2026 MacBook Neo 13" priced at ₹63,990 is implausible and likely fabricated, as no supporting source was provided; the output includes unsupported information.
+  ↪ critic-fail recovery: planner node n:6 for n:3
+[n:6] planner            complete (3.1s)
+[browser] ── start ──────────────────────────────────────
+[browser] url       : https://www.amazon.in
+[browser] goal      : Search for 'laptops under 80000', filter by 'Price: Low to High' or 'Avg. Customer Review', and extract the model name, price, and key specs for 3 popular laptops.
+[browser] force_path: None
+[browser] layer1: fetching HTML via httpx ...
+[browser] layer1: fetch ok — 0 chars, final_url=https://www.amazon.in
+[browser] layer1: no HTML — skipping extract/block-check, escalating
+[browser] layer2a: no selectors in metadata — skipping
+[browser] layer2b: running A11yDriver ...
+[browser._drive] A11yDriver: navigating to https://www.amazon.in ...
+[browser._drive] A11yDriver: page loaded — https://www.amazon.in/
+[browser._drive] A11yDriver: rendered HTML = 2006 chars
+[browser._drive] A11yDriver: post-JS gateway block check → None
+[browser._drive] A11yDriver: driver.run() done — success=True  note=''
+[browser._drive] A11yDriver: listing mode — using trafilatura (6280 chars → capped at 5000)
+[browser] _follow_detail_pages: main has 0 link(s), falling back to body
+[browser] _follow_detail_pages: visiting 3 detail page(s): ['https://www.amazon.in/hz5/yourmembershipsandsubscriptions?ref_=nav_AccountFlyout_digital_subscriptions', 'https://www.amazon.in/hz/mycd/myx?pageType=content&ref_=nav_AccountFlyout_myk', 'https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc']
+[browser] _follow_detail_pages: ranking header:
+RANKED LISTING FROM PAGE (sorted by: page default):
+  Source URL: https://www.amazon.in/s?k=laptops+under+80000&crid=3JQ5HLGR4B7G9&sprefix=laptops+under+80000%2Caps%2C250&ref=nb_sb_noss_1
+  IMPORTANT: Display position IS the authoritative rank.
+  #1 = highest metric, do NOT re-sort by any number you see.
+  #1: https://www.amazon.in/hz5/yourmembershipsandsubscriptions?ref_=nav_AccountFlyout_digital_subscriptions  [card: Memberships & Subscriptions]
+  #2: https://www.amazon.in/hz/mycd/myx?pageType=content&ref_=nav_AccountFlyout_myk  [card: Manage Your Content and Devices]
+  #3: https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc  [card: Health, Household & Personal Care]
+[browser] _follow_detail_pages: https://www.amazon.in/ap/signin?openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fwww.amazon.in%2Fhz5%2Fyourmembershipsandsubscriptions%3Fref_%3Dnav_AccountFlyout_digital_subscriptions&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=amzn_swa_in&openid.mode=checkid_setup&language=en_IN&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&pageId=amazon&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0 → 515 chars
+[browser] _follow_detail_pages: https://www.amazon.in/ap/signin?clientContext=520-3175218-8066359&openid.pape.max_auth_age=3600&openid.return_to=https%3A%2F%2Fwww.amazon.in%2Fhz%2Fmycd%2Fmyx&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=inflex&openid.mode=checkid_setup&marketPlaceId=INAmazon&language=en_IN&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&language=en → 322 chars
+[browser] _follow_detail_pages: https://www.amazon.in/health-and-personal-care/b/?ie=UTF8&node=1350384031&ref_=nav_cs_hpc → 2301 chars
+[browser._drive] A11yDriver: detail pages added 4942 chars — total extracted now 9944 chars
+[browser] layer2b: a11y done — success=True  gateway_blocked=False  note=''
+[browser] layer2b: ✓ a11y succeeded — returning a11y
+[n:7] browser            complete (15.6s)
+  [debug:browser] content length = 10079 chars
+  [debug:browser] content preview (first 400 chars): 'Source URL: https://www.amazon.in/s?k=laptops+under+80000&crid=3JQ5HLGR4B7G9&sprefix=laptops+under+80000%2Caps%2C250&ref=nb_sb_noss_1\n\nCheck each product page for other buying options.\n400+ bought in past month\nSave extra with No Cost EMISave extra with No Cost EMI\nFREE delivery Sat, 13 Jun\nOr fastest delivery Tomorrow 8 am - 12 pm\nService: Device Setup\n500+ bought in past month\nSave extra with No'
+[n:8] distiller          complete (1.6s)
+  [debug:distiller] output = {"fields": {"laptop_1": {"model": "Lenovo Ideapad Slim 3", "price": "\u20b976,990", "specs": "13th Gen Intel Core i7 13620H, 16GB RAM, 512GB SSD, WUXGA"}, "laptop_2": {"model": "ASUS TUF A15 (2025)", "price": "\u20b968,990", "specs": "AMD Ryzen 7 7445HS, RTX 3050-4GB, 16GB DDR5"}, "laptop_3": {"model": "Dell G15", "price": "\u20b979,490", "specs": "13th Gen Intel Core i5-13450HX, NVIDIA RTX 3050-6GB, 16GB RAM"}}, "rationale": "The laptop models, prices, and specifications were extracted directly from the browser tool's final output."}
+[n:10] critic             complete (1.0s)
+  [debug:critic] verdict   = pass
+  [debug:critic] rationale = The output lists three laptop models with prices all below ₹80,000 and includes specifications, matching the user's request. No contradictions or missing required information are evident.
+  [debug:critic] full output = {"verdict": "pass", "rationale": "The output lists three laptop models with prices all below \u20b980,000 and includes specifications, matching the user's request. No contradictions or missing required information are evident."}
+[n:9] formatter          complete (2.9s)
+  [debug:formatter] final_answer = Here is a comparison of three laptops currently available on Amazon.in for under ₹80,000:
+
+| Feature | Lenovo Ideapad Slim 3 | ASUS TUF A15 (2025) | Dell G15 |
+| :--- | :--- | :--- | :--- |
+| Price | ₹76,990 | ₹68,990 | ₹79,490 |
+| Processor | 13th Gen Intel Core i7 13620H | AMD Ryzen 7 7445HS | 13th Gen Intel Core i5-13450HX |
+| Graphics | Integrated | NVIDIA RTX 3050 (4GB) | NVIDIA RTX 3050 (6GB
+
+══════════════════════════════════════════════════════════════════════════════
+FINAL: Here is a comparison of three laptops currently available on Amazon.in for under ₹80,000:
+
+| Feature | Lenovo Ideapad Slim 3 | ASUS TUF A15 (2025) | Dell G15 |
+| :--- | :--- | :--- | :--- |
+| Price | ₹76,990 | ₹68,990 | ₹79,490 |
+| Processor | 13th Gen Intel Core i7 13620H | AMD Ryzen 7 7445HS | 13th Gen Intel Core i5-13450HX |
+| Graphics | Integrated | NVIDIA RTX 3050 (4GB) | NVIDIA RTX 3050 (6GB) |
+| Memory | 16GB RAM | 16GB DDR5 | 16GB RAM |
+| Storage | 512GB SSD | Not specified | Not specified |
+| Display | WUXGA | Not specified | Not specified |
+
+These options cater to different needs: th
 ══════════════════════════════════════════════════════════════════════════════

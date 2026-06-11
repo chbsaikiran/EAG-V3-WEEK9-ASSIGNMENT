@@ -268,10 +268,18 @@ class Executor:
                       f"{graph.g.nodes[nid]['status']:8s} "
                       f"({result.elapsed_s:.1f}s)"
                       + (f"  err={result.error[:80]}" if result.error else ""))
+                if skill_name == "browser" and result.success:
+                    _content = (result.output or {}).get("content") or ""
+                    print(f"  [debug:browser] content length = {len(_content)} chars")
+                    print(f"  [debug:browser] content preview (first 400 chars): "
+                          f"{_content[:400]!r}")
                 if skill_name == "distiller" and result.success:
                     import json as _json
                     print(f"  [debug:distiller] output = "
                           f"{_json.dumps(result.output, default=str)[:600]}")
+                if skill_name == "formatter" and result.success:
+                    print(f"  [debug:formatter] final_answer = "
+                          f"{(result.output or {}).get('final_answer','(missing)')[:400]}")
                 if skill_name == "critic" and result.success:
                     import json as _json
                     verdict   = (result.output or {}).get("verdict", "(missing)")
