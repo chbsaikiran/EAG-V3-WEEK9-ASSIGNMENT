@@ -67,6 +67,45 @@ structured records the Formatter can render cleanly.
                          {"action":"key_combo","value":"<char>",
                           "modifiers":["command",...]}
                          {"action":"delay","value":<seconds>}
+                     Full step vocabulary:
+                       {"action":"keystroke","value":"<text>"}
+                         type any string of characters / symbols
+                       {"action":"key","value":"<name>","modifiers":[...]}
+                         named key: return, escape, tab, space, delete,
+                         end, home, pageup, pagedown, up, down, left,
+                         right, f1..f12. Modifiers: command,shift,
+                         option,control
+                       {"action":"key_combo","value":"<char or name>",
+                        "modifiers":[...]}
+                         char OR named key + modifiers.
+                         Cmd+S  → {"action":"key_combo","value":"s",
+                                   "modifiers":["command"]}
+                         Cmd+End→ {"action":"key_combo","value":"end",
+                                   "modifiers":["command"]}
+                       {"action":"open_file","value":"<posix path>"}
+                         open a known file path in the app directly via
+                         AppleScript — USE THIS instead of any file-open
+                         dialog or Spotlight when the path is known.
+                       {"action":"shell","value":"<shell command>"}
+                         run a shell command (create files, CLI tools)
+                       {"action":"delay","value":"<seconds>"}
+                     app_name rules:
+                       • Use short name for apps in /Applications:
+                           "Calculator", "TextEdit", "Notes"
+                       • Use FULL PATH for apps installed elsewhere:
+                           "/Users/saikiran/Downloads/Sublime Text.app"
+                         AppleScript accepts full .app paths.
+                       NEVER use Spotlight (Cmd+Space) to open apps —
+                       it is a search tool, not a command runner.
+                     Correct pattern for "open file X in App Y and edit":
+                       step 1: {"action":"open_file","value":"<path>"}
+                       step 2: {"action":"delay","value":"2"}
+                       step 3: {"action":"key_combo","value":"end",
+                                "modifiers":["command"]}   ← go to EOF
+                       step 4: {"action":"key","value":"return"}
+                       step 5: {"action":"keystroke","value":"<content>"}
+                       step 6: {"action":"key_combo","value":"s",
+                                "modifiers":["command"]}   ← save
                      metadata MAY set:
                        read_ax (str)  AX path for reading result after
                          the steps complete. Known correct paths:
@@ -102,10 +141,20 @@ structured records the Formatter can render cleanly.
                          "open a new file, type a Python hello world,
                           save with Cmd+S, verify the file was created"
                      metadata MAY set:
-                       app_path   (str) Electron binary; defaults to
-                                  Antigravity IDE
+                       app_path   (str) .app bundle OR binary path; skill
+                                  auto-resolves bundles to their binary.
+                                  ALWAYS set app_path explicitly:
+                                    user mentions "VS Code" / "Visual Studio Code" →
+                                      "/Applications/Visual Studio Code.app"
+                                    user mentions "Antigravity" / no preference →
+                                      "/Applications/Antigravity IDE.app"
+                                  Never omit app_path — always pick one.
                        debug_port (int) CDP port; default 9222
-                       workspace  (str) folder to open
+                       workspace  (str) folder to open in the editor.
+                                  ALWAYS set this for any file task:
+                                    "/Users/saikiran/Sandbox"
+                                  The agent creates/edits files inside
+                                  this folder using VS Code's UI.
                        max_steps  (int) LLM turn cap; default 12
 
 Output (JSON, no markdown):

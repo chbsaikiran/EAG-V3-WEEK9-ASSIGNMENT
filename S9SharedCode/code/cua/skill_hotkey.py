@@ -19,12 +19,32 @@ metadata contract (all set by the Planner):
           Example: {"action": "key", "value": "return"}
           Example: {"action": "key", "value": "s", "modifiers": ["command"]}
 
-      {"action": "key_combo", "value": "<char>", "modifiers": ["command", ...]}
-          Keystroke a single character with one or more modifier keys.
-          Example: {"action": "key_combo", "value": "c", "modifiers": ["command"]}
+      {"action": "key_combo", "value": "<char or named key>", "modifiers": ["command", ...]}
+          Keystroke a character OR named key with modifier keys.
+          Named keys (end, home, pageup, pagedown, return, …) use key code.
+          Example: {"action": "key_combo", "value": "s", "modifiers": ["command"]}
+          Example: {"action": "key_combo", "value": "end", "modifiers": ["command"]}
+
+      {"action": "open_file", "value": "<posix file path>"}
+          Open a file in the app using AppleScript's `open POSIX file`.
+          Reliable for any known path — no file dialog needed.
+          app_name can be a short name ("Sublime Text") or a full path
+          ("/Users/x/Downloads/Sublime Text.app").
+          Example: {"action": "open_file", "value": "/Users/saikiran/sai.txt"}
+
+      {"action": "shell", "value": "<shell command>"}
+          Run a shell command via `do shell script`.
+          Use when no hotkey exists: create files, copy, run CLI tools.
+          Example: {"action": "shell", "value": "touch /tmp/test.txt"}
 
       {"action": "delay", "value": <seconds as string or number>}
           Pause for the given number of seconds.
+
+  app_name  can be:
+    • A short macOS display name: "Calculator", "TextEdit", "Sublime Text"
+    • A full .app path for apps NOT in /Applications:
+      "/Users/saikiran/Downloads/Sublime Text.app"
+      AppleScript accepts both forms.
 
   read_ax   (str, optional)  — AppleScript AX expression evaluated inside
                                 the app's System Events process, e.g.
@@ -33,7 +53,7 @@ metadata contract (all set by the Planner):
                                 If omitted, output.result is null.
 
 Known AX paths:
-  macOS Calculator display  → "value of static text 1 of window 1"
+  macOS Calculator display  → "value of static text 1 of scroll area 2 of group 1 of group 1 of splitter group 1 of group 1 of window 1"
   macOS TextEdit content    → "value of text area 1 of scroll area 1 of window 1"
 """
 from __future__ import annotations
@@ -59,6 +79,10 @@ _KEY_CODES: dict[str, int] = {
     "down":     125,
     "left":     123,
     "right":    124,
+    "end":      119,
+    "home":     115,
+    "pageup":   116,
+    "pagedown": 121,
     "f1": 122, "f2": 120, "f3":  99, "f4": 118,
     "f5":  96, "f6":  97, "f7":  98, "f8": 100,
     "f9": 101, "f10": 109, "f11": 103, "f12": 111,
@@ -172,18 +196,54 @@ class HotkeySkill:
                     await asyncio.sleep(0.1)
 
                 elif action == "key_combo":
-                    # Single printable character + one or more modifiers.
-                    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-                    using   = _using_clause(mods)
-                    script  = (
-                        f'tell application "System Events"\n'
-                        f'  tell process "{app_name}"\n'
-                        f'    keystroke "{escaped}"{using}\n'
-                        f'  end tell\n'
+                    # Character or named key + one or more modifiers.
+                    # e.g. Cmd+S, Cmd+End, Cmd+Shift+P
+                    key_lower = value.lower()
+                    using     = _using_clause(mods)
+                    if key_lower in _KEY_CODES:
+                        code   = _KEY_CODES[key_lower]
+                        script = (
+                            f'tell application "System Events"\n'
+                            f'  tell process "{app_name}"\n'
+                            f'    key code {code}{using}\n'
+                            f'  end tell\n'
+                            f'end tell'
+                        )
+                    else:
+                        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+                        script  = (
+                            f'tell application "System Events"\n'
+                            f'  tell process "{app_name}"\n'
+                            f'    keystroke "{escaped}"{using}\n'
+                            f'  end tell\n'
+                            f'end tell'
+                        )
+                    await _osascript(script)
+                    await asyncio.sleep(0.15)
+
+                elif action == "open_file":
+                    # Open a file directly in the app using AppleScript.
+                    # Works with both short names ("Sublime Text") and full
+                    # paths ("/Users/x/Downloads/Sublime Text.app").
+                    # Much more reliable than Spotlight or file-open dialogs.
+                    escaped_path = value.replace("\\", "\\\\").replace('"', '\\"')
+                    script = (
+                        f'tell application "{app_name}"\n'
+                        f'    open POSIX file "{escaped_path}"\n'
+                        f'    activate\n'
                         f'end tell'
                     )
                     await _osascript(script)
-                    await asyncio.sleep(0.15)
+                    await asyncio.sleep(1.5)   # let the file load in the editor
+
+                elif action == "shell":
+                    # Run an arbitrary shell command via AppleScript.
+                    # Use for operations that have no direct hotkey equivalent
+                    # e.g. creating a file, copying, running a CLI tool.
+                    escaped_cmd = value.replace("\\", "\\\\").replace('"', '\\"')
+                    script = f'do shell script "{escaped_cmd}"'
+                    await _osascript(script)
+                    await asyncio.sleep(0.3)
 
                 else:
                     raise ValueError(f"unknown action: {action!r}")
