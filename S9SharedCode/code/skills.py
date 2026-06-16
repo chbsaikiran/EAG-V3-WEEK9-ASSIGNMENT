@@ -316,6 +316,52 @@ async def run_skill(skill: Skill, node_id: str, graph_nodes,
             result.elapsed_s = time.time() - started
         return result, rendered
 
+    if skill.name == "cua_hotkey":
+        # Layer 2a: zero LLM calls. HotkeySkill drives macOS apps via
+        # osascript using the step list the Planner emitted in metadata.
+        node_dict = graph_nodes[node_id]
+        node_spec = NodeSpec(
+            skill="cua_hotkey",
+            inputs=node_dict.get("inputs") or [],
+            metadata=node_dict.get("metadata") or {},
+        )
+        from cua.skill_hotkey import HotkeySkill
+        result = await HotkeySkill().run(node_spec)
+        if not result.elapsed_s:
+            result.elapsed_s = time.time() - started
+        return result, rendered
+
+    if skill.name == "cua_electron":
+        # Electron page path: launches Electron with --remote-debugging-port,
+        # connects via Playwright CDP, drives via multi-turn LLM loop.
+        node_dict = graph_nodes[node_id]
+        node_spec = NodeSpec(
+            skill="cua_electron",
+            inputs=node_dict.get("inputs") or [],
+            metadata=node_dict.get("metadata") or {},
+        )
+        from cua.skill_electron import ElectronSkill
+        result = await ElectronSkill().run(node_spec)
+        if not result.elapsed_s:
+            result.elapsed_s = time.time() - started
+        return result, rendered
+
+    if skill.name == "cua_game":
+        # Layer 3 pure vision for canvas browser games. Bypasses the
+        # BrowserSkill cascade entirely — goes straight to raw screenshots
+        # + vision LLM. No SoM annotation; keyboard-only action vocabulary.
+        node_dict = graph_nodes[node_id]
+        node_spec = NodeSpec(
+            skill="cua_game",
+            inputs=node_dict.get("inputs") or [],
+            metadata=node_dict.get("metadata") or {},
+        )
+        from cua.skill_game import BrowserGameSkill
+        result = await BrowserGameSkill().run(node_spec)
+        if not result.elapsed_s:
+            result.elapsed_s = time.time() - started
+        return result, rendered
+
     tools = tool_payload(skill.tools_allowed)
     if tools:
         # Multi-turn tool-use loop. mcp_runner opens one MCP stdio session

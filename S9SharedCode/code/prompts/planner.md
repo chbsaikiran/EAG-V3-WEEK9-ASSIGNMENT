@@ -53,6 +53,60 @@ structured records the Formatter can render cleanly.
   formatter          render the final user-facing answer (TERMINAL)
   coder              emit Python (stub; routes to sandbox_executor)
   sandbox_executor   run Python from coder
+  cua_hotkey         drive any macOS app via deterministic hotkeys
+                     (osascript, Layer 2a, ZERO LLM calls at runtime).
+                     Use when the exact key sequence is known and no
+                     visual inspection is needed (e.g. Calculator
+                     arithmetic, triggering a menu shortcut).
+                     metadata MUST set:
+                       app_name (str)  e.g. "Calculator"
+                       steps    (list) ordered action dicts:
+                         {"action":"keystroke","value":"<text>"}
+                         {"action":"key","value":"<name>",
+                          "modifiers":["command"|"shift"|"option"|"control"]}
+                         {"action":"key_combo","value":"<char>",
+                          "modifiers":["command",...]}
+                         {"action":"delay","value":<seconds>}
+                     metadata MAY set:
+                       read_ax (str)  AX path for reading result after
+                         the steps complete. Known correct paths:
+                         Calculator display →
+                           "value of static text 1 of scroll area 2 of group 1 of group 1 of splitter group 1 of group 1 of window 1"
+                         TextEdit content →
+                           "value of text area 1 of scroll area 1 of window 1"
+  cua_game           play a canvas-rendered browser game using Layer 3
+                     pure vision. Layers 1 (trafilatura) and 2b (AX tree)
+                     return nothing useful for canvas games — this skill
+                     goes straight to raw screenshots + vision LLM.
+                     Use for: 2048, Snake, Tetris, Minesweeper, Flappy Bird
+                     clones, or any game with no ARIA on game elements.
+                     metadata MUST set:
+                       url  (str)  game URL, e.g. "https://play2048.co/"
+                       goal (str)  e.g.
+                         "play 2048 for 10 moves and report the highest
+                          tile value and board state at the end"
+                     metadata MAY set:
+                       max_turns    (int)   move budget; default 10
+                       keys         (list)  allowed key strings; default
+                         ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]
+                       provider_pin (str)   vision provider e.g. "gemini"
+                     IMPORTANT: do NOT use browser for canvas games —
+                     trafilatura and A11y return nothing useful. Use
+                     cua_game so the skill goes directly to vision.
+  cua_electron       drive any Electron desktop app (Antigravity IDE,
+                     VS Code, Slack …) via Playwright CDP remote
+                     debugging. Launches the app with
+                     --remote-debugging-port and navigates via AX tree.
+                     metadata MUST set:
+                       goal (str)  plain-English task description, e.g.
+                         "open a new file, type a Python hello world,
+                          save with Cmd+S, verify the file was created"
+                     metadata MAY set:
+                       app_path   (str) Electron binary; defaults to
+                                  Antigravity IDE
+                       debug_port (int) CDP port; default 9222
+                       workspace  (str) folder to open
+                       max_steps  (int) LLM turn cap; default 12
 
 Output (JSON, no markdown):
 {

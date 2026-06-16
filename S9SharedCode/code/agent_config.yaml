@@ -99,3 +99,77 @@ browser:
     chosen layer surfaced as output.path. Use when Researcher's
     fetch_url is insufficient: JavaScript-rendered content, interactive
     widgets, multi-page workflows.
+
+cua_hotkey:
+  prompt: prompts/cua_hotkey.md
+  # Layer 2a — zero LLM calls at runtime. The skill dispatches osascript
+  # keystrokes deterministically and reads the result from the AX tree.
+  # temperature / max_tokens are unused by the dispatcher for this skill.
+  temperature: 0.0
+  max_tokens: 256
+  description: |
+    Drives any macOS application using deterministic hotkey sequences
+    (osascript). Zero LLM calls at runtime — Layer 2a.
+    metadata MUST set:
+      app_name (str)  — macOS app name, e.g. "Calculator"
+      steps    (list) — ordered list of action dicts:
+          {"action": "keystroke", "value": "<text>"}
+          {"action": "key",       "value": "<name>", "modifiers": [...]}
+          {"action": "key_combo", "value": "<char>", "modifiers": [...]}
+          {"action": "delay",     "value": <seconds>}
+    metadata MAY set:
+      read_ax (str)   — AppleScript AX path to read result after steps,
+                        e.g. "value of static text 1 of window 1"
+    Use for: Calculator arithmetic, TextEdit, any app where the exact
+    key sequence is known in advance and no visual inspection is needed.
+
+cua_electron:
+  prompt: prompts/cua_electron.md
+  # Electron page path — connects via CDP remote debugging and drives the
+  # app through a multi-turn LLM loop reading the AX tree each turn.
+  # The LLM loop runs inside the skill; this entry is for registry and
+  # planner-prompt purposes only.
+  temperature: 0.0
+  max_tokens: 256
+  description: |
+    Drives any Electron desktop app (Antigravity IDE, VS Code, Slack …)
+    via Playwright CDP remote debugging. Launches the app with
+    --remote-debugging-port, reads the page accessibility tree each
+    turn, and uses the LLM gateway to decide the next action.
+    metadata MUST set:
+      goal (str)       — what to accomplish, e.g.
+                         "open new file, type hello world, save with Cmd+S"
+    metadata MAY set:
+      app_path (str)   — Electron binary path; defaults to Antigravity IDE
+      debug_port (int) — CDP port; default 9222
+      workspace (str)  — folder to open in the editor
+      max_steps (int)  — LLM turn cap; default 12
+    Use for: editing files in Antigravity/VS Code, Slack message drafting,
+    any task inside an Electron app where DOM-level access is needed.
+
+cua_game:
+  prompt: prompts/cua_game.md
+  # Layer 3 pure-vision skill for canvas-rendered browser games. Layers 1
+  # (trafilatura) and 2b (AX tree) return nothing useful for canvas games,
+  # so this skill bypasses the cascade entirely and goes straight to vision.
+  # The multi-turn vision loop runs inside the skill.
+  temperature: 0.0
+  max_tokens: 256
+  description: |
+    Plays a canvas-rendered browser game using Layer 3 pure vision.
+    Takes raw screenshots each turn and uses the vision LLM to decide
+    keyboard moves. No SoM annotation needed — canvas has no interactive
+    DOM elements to mark.
+    metadata MUST set:
+      url  (str)  — game URL, e.g. "https://play2048.co/"
+      goal (str)  — what to accomplish, e.g.
+                    "play 2048 for 10 moves and report the highest tile"
+    metadata MAY set:
+      max_turns    (int)  — move budget; default 10
+      keys         (list) — allowed key names; default
+                            ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]
+      click_x/y    (int)  — pixel to click for keyboard focus; default 300,350
+      provider_pin (str)  — vision provider, e.g. "gemini"
+    Use for: 2048, Snake, Tetris, Flappy Bird clones, Minesweeper, any
+    browser game whose state is only visible in a screenshot (canvas/WebGL,
+    no ARIA on game elements).
