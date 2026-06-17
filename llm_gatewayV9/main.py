@@ -1,3 +1,4 @@
+from typing import Any
 import os, time, json
 from pathlib import Path
 from typing import Optional
@@ -650,7 +651,7 @@ async def vision(req: VisionRequest):
     """
     content: list[dict[str, Any]] = [{"type": "text", "text": req.prompt}]
     content.append({"type": "image_url", "image_url": {"url": req.image}})
-
+    #print(req.agent)
     inner = ChatRequest(
         messages=[{"role": "user", "content": content}],
         system=req.system,

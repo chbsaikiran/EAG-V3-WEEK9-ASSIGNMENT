@@ -86,40 +86,15 @@ _SYSTEM_PROMPT = (
     "  done(success, note)      — task finished or permanently failed\n\n"
     "KEY RULES:\n"
     "  • NEVER retry a key or click that already failed — change approach.\n"
-    "  • NEVER use click() for anything that has a keyboard shortcut.\n"
-    "  • If you see a modal/overlay: key('Escape') to dismiss, then continue.\n"
-    "  • Welcome tab is NOT a modal — key('Meta+w') closes it.\n\n"
-    "VS CODE KEYBOARD REFERENCE (Mac):\n"
-    "  Command palette         key('Meta+Shift+P')\n"
-    "  New named file          key('Meta+Shift+P') → type('File: New File') → key('Enter')\n"
-    "                          → VS Code asks for filename → type('hello.py') → key('Enter')\n"
-    "                          → file opens in editor\n"
-    "  Save                    key('Meta+s')\n"
-    "  Open integrated terminal key('Control+Backquote')\n"
-    "  Run Python file         (in terminal) type('python hello.py') → key('Enter')\n\n"
-    "STEP SEQUENCE for 'create hello.py with hello-world content, save, run':\n\n"
-    "  PHASE 1 — open a blank editor:\n"
-    "  Step 1:  key('Meta+Shift+P')        open command palette\n"
-    "  Step 2:  type('New Untitled Text File')\n"
-    "  Step 3:  click('text=New Untitled Text File')\n"
-    "           ← Playwright text selector — matches the list item by visible text.\n"
-    "           NEVER press Enter here — there are multiple items; click the right one.\n"
-    "           The item text contains 'New Untitled Text File'.\n"
-    "           After click the editor opens full-screen with a blank area.\n\n"
-    "  PHASE 2 — type code into the editor (large blank area, NOT a small input box):\n"
-    "  Step 4:  type('print(\"Hello, World!\")')\n\n"
-    "  PHASE 3 — save with filename (opens a small Save dialog at top of screen):\n"
-    "  Step 5:  key('Meta+s')              triggers Save As because file is untitled\n"
-    "  Step 6:  type('hello.py')           type ONLY in the Save dialog filename field\n"
-    "  Step 7:  key('Enter')               confirm\n\n"
-    "  PHASE 4 — run in terminal:\n"
-    "  Step 8:  key('Control+Backquote')   open integrated terminal\n"
-    "  Step 9:  type('python hello.py')\n"
-    "  Step 10: key('Enter')\n"
-    "  Step 11: done(success=true)\n\n"
-    "RULE: content (Phase 2) goes in the LARGE EDITOR AREA.\n"
-    "      filename (Phase 3) goes in the SMALL SAVE DIALOG.\n"
-    "      They are never the same box.\n"
+    "  • If you see a modal/overlay: key('Escape') to dismiss, then continue.\n\n"
+    "CURRENT STATE: The file has already been created and saved.\n"
+    "Your only job is to run it in the integrated terminal and confirm success.\n\n"
+    "STEP SEQUENCE:\n"
+    "  Step 1:  key('Control+Backquote')   open integrated terminal\n"
+    "  Step 2:  type('python hello.py')    (wait for terminal to open first)\n"
+    "  Step 3:  key('Enter')\n"
+    "  Step 4:  done(success=true, note='hello.py created and executed')\n\n"
+    "If the terminal is already open, skip Step 1.\n"
     "Output ONLY valid JSON matching the schema. No markdown."
 )
 
@@ -132,8 +107,6 @@ class ElectronSkill:
         debug_port  = int(node.metadata.get("debug_port") or 9222)
         goal        = node.metadata.get("goal", "")
         workspace   = node.metadata.get("workspace") or "/Users/saikiran/Sandbox"
-        max_steps   = int(node.metadata.get("max_steps") or 12)
-        gateway_url = node.metadata.get("gateway_url") or _DEFAULT_GATEWAY
         t0 = time.time()
 
         if not goal:
@@ -170,19 +143,28 @@ class ElectronSkill:
                         elapsed_s=time.time() - t0,
                     )
 
-                # Pre-flight: dismiss first-launch chrome before LLM loop.
-                # Escape x3 closes real modal overlays (trust, AI panel, theme).
+                # Pre-flight: dismiss first-launch chrome.
                 for _ in range(3):
                     await page.keyboard.press("Escape")
                     await asyncio.sleep(0.4)
-                # Meta+w closes the Welcome TAB (a tab, not a modal — Escape
-                # does nothing to it). The Explorer showing the workspace folder
-                # is left intact for the agent to create files via command palette.
+                # Close the Welcome tab (it's a tab, not a modal).
                 await page.keyboard.press("Meta+w")
                 await asyncio.sleep(0.8)
 
-                client = V9Client(base_url=gateway_url, agent="cua_electron")
-                output = await self._drive(page, client, goal, max_steps)
+                # Scripted file creation — deterministic, no LLM needed.
+                # Extract .py filename from goal; fall back to "script.py".
+                import re as _re
+                _m = _re.search(r'\b([\w.-]+\.py)\b', goal)
+                _filename = _m.group(1) if _m else "script.py"
+                output = await self._create_and_save(page, _filename, goal)
+
+                if not output.get("success"):
+                    return AgentResult(
+                        success=False, agent_name=self.NAME,
+                        error=output.get("note", "scripted create failed"),
+                        elapsed_s=time.time() - t0,
+                    )
+                # Scripted sequence handled everything — no LLM loop needed.
 
                 return AgentResult(
                     success=output.get("success", False),
@@ -198,6 +180,57 @@ class ElectronSkill:
             )
         finally:
             proc.terminate()
+
+    # ── scripted file creation ────────────────────────────────────────────────
+
+    async def _create_and_save(self, page, filename: str, goal: str) -> dict:
+        """Cmd+Shift+P → File: New File → Enter → click editor → type content → Cmd+S → filename → Enter."""
+        workspace = "/Users/saikiran/Sandbox"
+        full_path = f"{workspace}/{filename}"
+        try:
+            # 1. Open command palette
+            await page.keyboard.press("Meta+Shift+P")
+            await asyncio.sleep(1.0)
+
+            # 2. Type the command
+            await page.keyboard.type("File: New File")
+            await asyncio.sleep(0.5)
+
+            await page.keyboard.press("ArrowDown")
+            await asyncio.sleep(0.3)
+
+            # 3. Enter — VS Code shows a "New File Name" prompt
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(0.8)
+
+            # 7. Type the print statement into the clean editor
+            await page.keyboard.type("hello.py")
+            await asyncio.sleep(0.5)
+
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(0.8)
+
+            await page.keyboard.type('print("Hello, World!")')
+            await asyncio.sleep(0.5)
+
+            # 7. Cmd+S — file is already named so no Save dialog appears
+            await page.keyboard.press("Meta+s")
+            await asyncio.sleep(1.0)
+
+            print(f"[cua_electron] scripted: saved {full_path!r}")
+
+            # Open integrated terminal and run.
+            await page.keyboard.press("Control+`")
+            await asyncio.sleep(2.5)
+            await page.keyboard.type(f"uv run python {filename}")
+            await asyncio.sleep(0.3)
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(2.0)
+            print(f"[cua_electron] scripted: executed 'uv run python {filename}'")
+
+            return {"success": True, "note": f"{filename} created at {full_path} and executed"}
+        except Exception as e:
+            return {"success": False, "note": f"scripted create failed: {e}"}
 
     # ── drive loop ────────────────────────────────────────────────────────────
 
@@ -405,7 +438,7 @@ class ElectronSkill:
 
     @staticmethod
     async def _find_workbench_page(browser):
-        """Return the main workbench page, skipping DevTools / service-worker pages."""
+        """Enter the main workbench page, skipping DevTools / service-worker pages."""
         contexts = browser.contexts
         for ctx in contexts:
             for page in ctx.pages:

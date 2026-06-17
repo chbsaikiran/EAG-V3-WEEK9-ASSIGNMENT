@@ -43,7 +43,7 @@ VISION_MODEL_HINTS = (
     "llava", "qwen2-vl", "qwen2.5-vl", "qwen3-vl",
     "llama-3.2-11b-vision", "llama-3.2-90b-vision",
     "minicpm-v", "molmo", "pixtral", "internvl",
-    "gemma3", "phi-4-multimodal",
+    "gemma3", "gemma4", "phi-4-multimodal",
     "-vl", "vision", "vlm",
 )
 
