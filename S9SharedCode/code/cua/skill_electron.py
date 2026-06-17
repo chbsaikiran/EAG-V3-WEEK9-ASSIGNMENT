@@ -107,6 +107,7 @@ class ElectronSkill:
         debug_port  = int(node.metadata.get("debug_port") or 9222)
         goal        = node.metadata.get("goal", "")
         workspace   = node.metadata.get("workspace") or "/Users/saikiran/Sandbox"
+        gateway_url = node.metadata.get("gateway_url") or _DEFAULT_GATEWAY
         t0 = time.time()
 
         if not goal:
@@ -151,12 +152,11 @@ class ElectronSkill:
                 await page.keyboard.press("Meta+w")
                 await asyncio.sleep(0.8)
 
-                # Scripted file creation — deterministic, no LLM needed.
-                # Extract .py filename from goal; fall back to "script.py".
-                import re as _re
-                _m = _re.search(r'\b([\w.-]+\.py)\b', goal)
-                _filename = _m.group(1) if _m else "script.py"
-                output = await self._create_and_save(page, _filename, goal)
+                # Ask the LLM to extract filename + content from the goal.
+                client = V9Client(base_url=gateway_url, agent="cua_electron")
+                _filename, _content = await self._extract_file_plan(goal, client)
+                print(f"[cua_electron] plan: filename={_filename!r}  content={_content!r}")
+                output = await self._create_and_save(page, _filename, _content)
 
                 if not output.get("success"):
                     return AgentResult(
@@ -183,8 +183,47 @@ class ElectronSkill:
 
     # ── scripted file creation ────────────────────────────────────────────────
 
-    async def _create_and_save(self, page, filename: str, goal: str) -> dict:
-        """Cmd+Shift+P → File: New File → Enter → click editor → type content → Cmd+S → filename → Enter."""
+    @staticmethod
+    async def _extract_file_plan(goal: str, client: V9Client) -> tuple[str, str]:
+        """Ask the LLM to extract filename and file content from the goal.
+        Returns (filename, content). Falls back to regex + hello-world on error.
+        """
+        import re as _re
+        schema = {
+            "type": "object",
+            "required": ["filename", "content"],
+            "additionalProperties": False,
+            "properties": {
+                "filename": {"type": "string", "description": "e.g. hello.py"},
+                "content":  {"type": "string", "description": "full file content to write"},
+            },
+        }
+        prompt = (
+            f"Extract the filename and complete file content from this goal:\n\n"
+            f"GOAL: {goal}\n\n"
+            f"Return JSON with 'filename' and 'content' fields only. "
+            f"'content' must be the exact code to write into the file."
+        )
+        try:
+            result = await client.chat(
+                prompt=prompt,
+                schema=schema,
+                schema_name="file_plan",
+                max_tokens=256,
+            )
+            plan = result.parsed or json.loads(result.text or "{}")
+            filename = plan.get("filename", "").strip()
+            content  = plan.get("content", "").strip()
+            if filename and content:
+                return filename, content
+        except Exception:
+            pass
+        # Fallback: regex for filename, hello-world content
+        m = _re.search(r'\b([\w.-]+\.py)\b', goal)
+        return (m.group(1) if m else "script.py"), 'print("Hello, World!")'
+
+    async def _create_and_save(self, page, filename: str, content: str) -> dict:
+        """Cmd+Shift+P → File: New File → filename → Enter → type content → Cmd+S."""
         workspace = "/Users/saikiran/Sandbox"
         full_path = f"{workspace}/{filename}"
         try:
@@ -196,30 +235,28 @@ class ElectronSkill:
             await page.keyboard.type("File: New File")
             await asyncio.sleep(0.5)
 
+            # 3. ArrowDown selects the right option, Enter executes it
             await page.keyboard.press("ArrowDown")
             await asyncio.sleep(0.3)
-
-            # 3. Enter — VS Code shows a "New File Name" prompt
             await page.keyboard.press("Enter")
             await asyncio.sleep(0.8)
 
-            # 7. Type the print statement into the clean editor
-            await page.keyboard.type("hello.py")
+            # 4. Type filename in VS Code's "New File Name" prompt
+            await page.keyboard.type(filename)
             await asyncio.sleep(0.5)
-
             await page.keyboard.press("Enter")
             await asyncio.sleep(0.8)
 
-            await page.keyboard.type('print("Hello, World!")')
+            # 5. Type the file content into the editor
+            await page.keyboard.type(content)
             await asyncio.sleep(0.5)
 
-            # 7. Cmd+S — file is already named so no Save dialog appears
+            # 6. Cmd+S — file is already named so no Save dialog appears
             await page.keyboard.press("Meta+s")
             await asyncio.sleep(1.0)
-
             print(f"[cua_electron] scripted: saved {full_path!r}")
 
-            # Open integrated terminal and run.
+            # 7. Open integrated terminal and run
             await page.keyboard.press("Control+`")
             await asyncio.sleep(2.5)
             await page.keyboard.type(f"uv run python {filename}")

@@ -1,39 +1,9 @@
-"""CUA BrowserGameSkill — Layer 3 vision for canvas-rendered browser games.
-
-Purpose-built for games that have no useful ARIA / accessibility tree so that
-layers 1 (trafilatura) and 2b (A11y text) both fail — forcing pure vision.
-
-Architecture (different from SetOfMarksDriver):
-  • Takes a RAW screenshot every turn — no SoM annotation needed because
-    canvas games have no DOM interactive elements to mark.
-  • Sends the screenshot to V9 /v1/vision with a GAME-STRATEGY system prompt
-    (not the web-navigation prompt used by the existing browser skill).
-  • Action vocabulary is keyboard-only: ArrowUp/Down/Left/Right + game-specific
-    extras (Space, r, w/a/s/d).
-  • The skill runs its own multi-turn loop; the orchestrator sees it as one
-    node that takes N seconds.
-
-metadata contract (set by the Planner):
-  url          (str, required)   — URL of the browser game
-  goal         (str, required)   — what to accomplish, e.g.
-                                   "play 2048 for 10 moves and report the
-                                    highest tile value reached"
-  max_turns    (int, optional)   — move budget; default 10
-  keys         (list, optional)  — allowed keys; default 2048 arrow keys
-  click_x      (int, optional)   — x-coordinate to click for keyboard focus
-  click_y      (int, optional)   — y-coordinate to click for keyboard focus
-  provider_pin (str, optional)   — vision provider to use (e.g. "gemini")
-  gateway_url  (str, optional)   — V9 gateway; default http://localhost:8109
-
-Recommended game: 2048 at https://play2048.co/
-  Layer 1 result: generic page boilerplate, no tile values
-  Layer 2b result: canvas element with no accessible children
-  Layer 3 result: screenshot clearly shows every tile's number and position
-"""
+"""CUA BrowserGameSkill — Layer 3 vision for canvas-rendered browser games."""
 from __future__ import annotations
 
 import asyncio
 import base64
+import random
 import time
 
 from playwright.async_api import async_playwright
@@ -50,7 +20,7 @@ _GAME_SYSTEM_PROMPT = """\
 You are a game-playing AI agent. Each turn you receive a raw screenshot of a
 browser game. Analyze the visual state and decide the best keyboard move.
 
-For 2048 (default game):
+For 2048:
   Board: 4×4 grid of numbered tiles. Tiles merge when two equal numbers meet.
   Controls: ArrowUp / ArrowDown / ArrowLeft / ArrowRight
   Strategy:
@@ -60,32 +30,47 @@ For 2048 (default game):
     • Never make a move that boxes in your highest tile with no exit.
   Game over: when no move changes the board and no empty cells remain.
 
-Available keys (use exactly these strings):
-  ArrowUp   ArrowDown   ArrowLeft   ArrowRight
+IMPORTANT: You MUST always output a valid "key" field — one of:
+  ArrowUp  ArrowDown  ArrowLeft  ArrowRight
+
+Never output an empty string for "key". Even if unsure, pick the best arrow key.
+
+POPUPS AND OVERLAYS — do NOT confuse these with Game Over:
+  • Cookie consent banners, GDPR notices, "Accept cookies" dialogs → NOT game over.
+  • App install prompts, "Add to home screen" banners → NOT game over.
+  • Any dialog that does not say "Game Over" in large text → NOT game over.
+  If you see a popup/overlay obscuring the game, set done=false and pick a move
+  anyway — the game code will handle dismissal.
+
+A real Game Over screen has LARGE "Game Over" text plus a "Try again" button.
 
 Output JSON only — no markdown, no explanation outside the JSON:
 {
   "thinking":   "<2–3 sentences: board analysis and reason for chosen move>",
-  "key":        "<one of the available keys, or empty string when done>",
+  "key":        "<REQUIRED: one of ArrowUp, ArrowDown, ArrowLeft, ArrowRight>",
   "game_state": "<brief: highest tile, approximate score if visible>",
   "done":       <true | false>,
   "done_note":  "<why done, e.g. 'completed 10 moves' or 'game over detected'>"
 }
 
-Set done=true when:
-  • The requested number of turns is reached.
-  • The screenshot shows a "Game Over" or "You lose" overlay.
-  • The goal has been achieved (e.g., a specific tile reached).
+Set done=true ONLY when:
+  • The screenshot clearly shows "Game Over" text with a "Try again" button.
+  • The goal tile has been reached (e.g., 2048 tile achieved).
+  NOTE: Reaching max_turns does NOT set done — the orchestrator handles that.
 """
 
-# ── action schema — tighter than the web driver schema ───────────────────────
+# ── action schema — key is required with an enum to force a valid move ────────
 _GAME_ACTION_SCHEMA: dict = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["thinking", "game_state", "done"],
+    "required": ["thinking", "key", "game_state", "done"],
     "properties": {
         "thinking":   {"type": "string"},
-        "key":        {"type": "string"},   # empty string when done=true
+        "key":        {
+            "type": "string",
+            "enum": ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"],
+            "description": "The keyboard key to press. MUST be one of the four arrow keys.",
+        },
         "game_state": {"type": "string"},
         "done":       {"type": "boolean"},
         "done_note":  {"type": "string"},
@@ -119,7 +104,7 @@ class BrowserGameSkill:
         client = V9Client(base_url=gateway_url, agent="cua_game")
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(headless=False)
             ctx = await browser.new_context(
                 viewport={"width": 600, "height": 720},
                 user_agent=(
@@ -133,11 +118,15 @@ class BrowserGameSkill:
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
                 print(f"[cua_game] page loaded: {page.url}")
-                await asyncio.sleep(2.0)          # let game JS initialise
+                await asyncio.sleep(2.5)          # let game JS initialise
 
-                # Click the game area so it captures keyboard events.
+                # ── dismiss cookie/consent banners ────────────────────────────
+                await _dismiss_popups(page)
+
+                # Re-click game board to give it keyboard focus.
                 await page.mouse.click(click_x, click_y)
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
+                print(f"[cua_game] keyboard focus acquired at ({click_x}, {click_y})")
 
                 moves_log: list[dict] = []
 
@@ -190,12 +179,13 @@ class BrowserGameSkill:
                         print(f"[cua_game] done signal received: {done_note!r}")
                         break
 
-                    # Only press if key is in the allowed set.
-                    if key in allowed_keys:
-                        await page.keyboard.press(key)
-                        await asyncio.sleep(0.35)   # let tile animation settle
-                    else:
-                        print(f"[cua_game] key {key!r} not in allowed set — skipping")
+                    # Fallback: if model returned invalid/empty key, pick randomly.
+                    if key not in allowed_keys:
+                        key = random.choice(allowed_keys)
+                        print(f"[cua_game] key invalid — using fallback {key!r}")
+
+                    await page.keyboard.press(key)
+                    await asyncio.sleep(0.35)   # let tile animation settle
 
                 # ── final board summary ───────────────────────────────────────
                 final_png = await page.screenshot(full_page=False)
@@ -239,3 +229,52 @@ class BrowserGameSkill:
 def _png_to_data_url(png_bytes: bytes) -> str:
     """Encode raw PNG bytes as a data URL for the /v1/vision endpoint."""
     return "data:image/png;base64," + base64.b64encode(png_bytes).decode()
+
+
+async def _dismiss_popups(page) -> None:
+    """Click through common cookie/consent banners before the game loop starts."""
+    # Escape first — closes native browser dialogs and some overlays.
+    await page.keyboard.press("Escape")
+    await asyncio.sleep(0.4)
+
+    # Ordered list of selectors for common consent/CMP buttons.
+    # Funding Choices (Google), OneTrust, Quantcast, custom banners.
+    selectors = [
+        # Funding Choices (play2048.co uses this)
+        ".fc-cta-consent",
+        ".fc-button.fc-cta-consent",
+        "button.fc-cta-consent",
+        # Generic accept/consent patterns
+        "button[id*='accept']",
+        "button[class*='accept']",
+        "[id*='consent'] button",
+        "[class*='consent'] button",
+        # Text-based (Playwright locator syntax)
+        "button:has-text('Accept all')",
+        "button:has-text('Accept All')",
+        "button:has-text('Accept')",
+        "button:has-text('I agree')",
+        "button:has-text('Agree')",
+        "button:has-text('Got it')",
+        "button:has-text('OK')",
+        "button:has-text('Continue')",
+        # OneTrust
+        "#onetrust-accept-btn-handler",
+        # Quantcast
+        ".qc-cmp2-summary-buttons button:first-child",
+    ]
+
+    for sel in selectors:
+        try:
+            btn = page.locator(sel).first
+            if await btn.is_visible(timeout=600):
+                await btn.click()
+                print(f"[cua_game] dismissed popup via {sel!r}")
+                await asyncio.sleep(0.8)
+                break
+        except Exception:
+            pass
+
+    # Second Escape pass in case clicking opened a nested dialog.
+    await page.keyboard.press("Escape")
+    await asyncio.sleep(0.3)
