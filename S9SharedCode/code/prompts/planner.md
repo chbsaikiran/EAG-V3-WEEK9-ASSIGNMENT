@@ -53,109 +53,101 @@ structured records the Formatter can render cleanly.
   formatter          render the final user-facing answer (TERMINAL)
   coder              emit Python (stub; routes to sandbox_executor)
   sandbox_executor   run Python from coder
-  cua_hotkey         drive any macOS app via deterministic hotkeys
-                     (osascript, Layer 2a, ZERO LLM calls at runtime).
-                     Use when the exact key sequence is known and no
-                     visual inspection is needed (e.g. Calculator
-                     arithmetic, triggering a menu shortcut).
-                     metadata MUST set:
-                       app_name (str)  e.g. "Calculator"
-                       steps    (list) ordered action dicts:
+  cua_computer       unified computer use agent — three-layer cascade:
+                       Layer 1: Hotkey/osascript  (native macOS, fastest,
+                                                   ZERO LLM calls at runtime)
+                       Layer 2: Electron/CDP      (VS Code and other
+                                                   Electron apps)
+                       Layer 3: Vision loop       (screenshot→LLM→action,
+                                                   last resort / browser games)
+                     Tries each layer in order; returns on first success.
+                     Use for ANY desktop or browser task.
+
+                     metadata MUST always set:
+                       goal (str)  plain-English task description.
+                       app  (str)  app name or .app path. Always set this
+                                   for desktop tasks. Examples:
+                                     "Calculator"
+                                     "Sublime Text"
+                                     "/Applications/Visual Studio Code.app"
+
+                     ── LAYER 1 FAST PATH (native macOS apps) ──────────
+                     For Calculator, TextEdit, Sublime Text, Notes, or ANY
+                     native macOS app where you know the keystrokes:
+                     ALWAYS include `steps` so Layer 1 runs directly.
+                     Layer 1 is SKIPPED when steps is missing — the skill
+                     falls through to the slow vision loop. Always plan steps.
+
+                     metadata MUST also set for Layer 1:
+                       steps (list) ordered osascript action dicts. Vocab:
                          {"action":"keystroke","value":"<text>"}
-                         {"action":"key","value":"<name>",
-                          "modifiers":["command"|"shift"|"option"|"control"]}
-                         {"action":"key_combo","value":"<char>",
-                          "modifiers":["command",...]}
-                         {"action":"delay","value":<seconds>}
-                     Full step vocabulary:
-                       {"action":"keystroke","value":"<text>"}
-                         type any string of characters / symbols
-                       {"action":"key","value":"<name>","modifiers":[...]}
-                         named key: return, escape, tab, space, delete,
-                         end, home, pageup, pagedown, up, down, left,
-                         right, f1..f12. Modifiers: command,shift,
-                         option,control
-                       {"action":"key_combo","value":"<char or name>",
-                        "modifiers":[...]}
-                         char OR named key + modifiers.
-                         Cmd+S  → {"action":"key_combo","value":"s",
-                                   "modifiers":["command"]}
-                         Cmd+End→ {"action":"key_combo","value":"end",
-                                   "modifiers":["command"]}
-                       {"action":"open_file","value":"<posix path>"}
-                         open a known file path in the app directly via
-                         AppleScript — USE THIS instead of any file-open
-                         dialog or Spotlight when the path is known.
-                       {"action":"shell","value":"<shell command>"}
-                         run a shell command (create files, CLI tools)
-                       {"action":"delay","value":"<seconds>"}
-                     app_name rules:
-                       • Use short name for apps in /Applications:
-                           "Calculator", "TextEdit", "Notes"
-                       • Use FULL PATH for apps installed elsewhere:
-                           "/Users/saikiran/Downloads/Sublime Text.app"
-                         AppleScript accepts full .app paths.
-                       NEVER use Spotlight (Cmd+Space) to open apps —
-                       it is a search tool, not a command runner.
-                     Correct pattern for "open file X in App Y and edit":
-                       step 1: {"action":"open_file","value":"<path>"}
-                       step 2: {"action":"delay","value":"2"}
-                       step 3: {"action":"key_combo","value":"end",
-                                "modifiers":["command"]}   ← go to EOF
-                       step 4: {"action":"key","value":"return"}
-                       step 5: {"action":"keystroke","value":"<content>"}
-                       step 6: {"action":"key_combo","value":"s",
-                                "modifiers":["command"]}   ← save
-                     metadata MAY set:
-                       read_ax (str)  AX path for reading result after
-                         the steps complete. Known correct paths:
+                           type a string of chars / operators
+                         {"action":"key","value":"<name>","modifiers":[…]}
+                           named key: return, escape, tab, space, delete,
+                           end, home, up, down, left, right, f1..f12
+                           modifiers: command, shift, option, control
+                         {"action":"key_combo","value":"<c>","modifiers":[…]}
+                           char or named key + modifiers
+                           Cmd+S  → {"action":"key_combo","value":"s",
+                                     "modifiers":["command"]}
+                           Cmd+End→ {"action":"key_combo","value":"end",
+                                     "modifiers":["command"]}
+                         {"action":"open_file","value":"<posix path>"}
+                           open a known path in the app via AppleScript —
+                           USE THIS instead of file dialogs when path known
+                         {"action":"shell","value":"<shell command>"}
+                           run a shell command (create files, CLI tools)
+                         {"action":"delay","value":"<seconds>"}
+                           pause N seconds
+
+                     metadata MAY set for Layer 1:
+                       read_ax (str) AX path to read a value after steps.
                          Calculator display →
-                           "value of static text 1 of scroll area 2 of group 1 of group 1 of splitter group 1 of group 1 of window 1"
+                           "value of static text 1 of scroll area 2 of
+                            group 1 of group 1 of splitter group 1 of
+                            group 1 of window 1"
                          TextEdit content →
-                           "value of text area 1 of scroll area 1 of window 1"
-  cua_game           play a canvas-rendered browser game using Layer 3
-                     pure vision. Layers 1 (trafilatura) and 2b (AX tree)
-                     return nothing useful for canvas games — this skill
-                     goes straight to raw screenshots + vision LLM.
-                     Use for: 2048, Snake, Tetris, Minesweeper, Flappy Bird
-                     clones, or any game with no ARIA on game elements.
-                     metadata MUST set:
-                       url  (str)  game URL, e.g. "https://play2048.co/"
-                       goal (str)  e.g.
-                         "play 2048 for 10 moves and report the highest
-                          tile value and board state at the end"
+                           "value of text area 1 of scroll area 1 of
+                            window 1"
+
+                     CALCULATOR EXAMPLE — always use this exact pattern:
+                       app: "Calculator"
+                       steps:
+                         {"action":"keystroke","value":"48*125="}
+                         {"action":"delay","value":"1"}
+                       read_ax: "value of static text 1 of scroll area 2
+                                 of group 1 of group 1 of splitter group 1
+                                 of group 1 of window 1"
+
+                     OPEN FILE + EDIT EXAMPLE (Sublime Text, TextEdit):
+                       app: "Sublime Text"
+                       steps:
+                         {"action":"open_file","value":"<posix path>"}
+                         {"action":"delay","value":"2"}
+                         {"action":"key_combo","value":"end",
+                          "modifiers":["command"]}
+                         {"action":"key","value":"return"}
+                         {"action":"keystroke","value":"<content to add>"}
+                         {"action":"key_combo","value":"s",
+                          "modifiers":["command"]}
+
+                     ── LAYER 2 (Electron apps: VS Code) ───────────────
+                     For VS Code / Electron apps, set app_path and workspace.
+                     steps is NOT needed — Layer 2 handles file creation
+                     via CDP automatically.
+                       app:       "/Applications/Visual Studio Code.app"
+                       workspace: "/Users/saikiran/Sandbox"
+
+                     ── LAYER 3 (browser games / last resort) ──────────
+                     For browser games or when no app is involved:
+                       url: "<game or page URL>"  ← triggers Layer 3 directly
+                       max_turns: 10
+
                      metadata MAY set:
-                       max_turns    (int)   move budget; default 10
-                       keys         (list)  allowed key strings; default
-                         ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]
-                       provider_pin (str)   vision provider e.g. "gemini"
-                     IMPORTANT: do NOT use browser for canvas games —
-                     trafilatura and A11y return nothing useful. Use
-                     cua_game so the skill goes directly to vision.
-  cua_electron       drive any Electron desktop app (Antigravity IDE,
-                     VS Code, Slack …) via Playwright CDP remote
-                     debugging. Launches the app with
-                     --remote-debugging-port and navigates via AX tree.
-                     metadata MUST set:
-                       goal (str)  plain-English task description, e.g.
-                         "open a new file, type a Python hello world,
-                          save with Cmd+S, verify the file was created"
-                     metadata MAY set:
-                       app_path   (str) .app bundle OR binary path; skill
-                                  auto-resolves bundles to their binary.
-                                  ALWAYS set app_path explicitly:
-                                    user mentions "VS Code" / "Visual Studio Code" →
-                                      "/Applications/Visual Studio Code.app"
-                                    user mentions "Antigravity" / no preference →
-                                      "/Applications/Antigravity IDE.app"
-                                  Never omit app_path — always pick one.
-                       debug_port (int) CDP port; default 9222
-                       workspace  (str) folder to open in the editor.
-                                  ALWAYS set this for any file task:
-                                    "/Users/saikiran/Sandbox"
-                                  The agent creates/edits files inside
-                                  this folder using VS Code's UI.
-                       max_steps  (int) LLM turn cap; default 12
+                       workspace  (str) folder for Electron editor (Layer 2).
+                       max_turns  (int) vision loop budget (Layer 3). Default 10.
+                       keys  (list)    allowed keys for game loop (Layer 3).
+                       click_x/y (int) pixel to click for game focus.
 
 Output (JSON, no markdown):
 {

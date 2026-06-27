@@ -316,48 +316,19 @@ async def run_skill(skill: Skill, node_id: str, graph_nodes,
             result.elapsed_s = time.time() - started
         return result, rendered
 
-    if skill.name == "cua_hotkey":
-        # Layer 2a: zero LLM calls. HotkeySkill drives macOS apps via
-        # osascript using the step list the Planner emitted in metadata.
+    if skill.name == "cua_computer":
+        # Unified computer use skill — 3-layer cascade:
+        #   Layer 1: osascript/hotkey  (native macOS, zero LLM calls)
+        #   Layer 2: Electron/CDP      (VS Code, Sublime Text, …)
+        #   Layer 3: Vision loop       (screenshot → LLM → action, always works)
         node_dict = graph_nodes[node_id]
         node_spec = NodeSpec(
-            skill="cua_hotkey",
+            skill="cua_computer",
             inputs=node_dict.get("inputs") or [],
             metadata=node_dict.get("metadata") or {},
         )
-        from cua.skill_hotkey import HotkeySkill
-        result = await HotkeySkill().run(node_spec)
-        if not result.elapsed_s:
-            result.elapsed_s = time.time() - started
-        return result, rendered
-
-    if skill.name == "cua_electron":
-        # Electron page path: launches Electron with --remote-debugging-port,
-        # connects via Playwright CDP, drives via multi-turn LLM loop.
-        node_dict = graph_nodes[node_id]
-        node_spec = NodeSpec(
-            skill="cua_electron",
-            inputs=node_dict.get("inputs") or [],
-            metadata=node_dict.get("metadata") or {},
-        )
-        from cua.skill_electron import ElectronSkill
-        result = await ElectronSkill().run(node_spec)
-        if not result.elapsed_s:
-            result.elapsed_s = time.time() - started
-        return result, rendered
-
-    if skill.name == "cua_game":
-        # Layer 3 pure vision for canvas browser games. Bypasses the
-        # BrowserSkill cascade entirely — goes straight to raw screenshots
-        # + vision LLM. No SoM annotation; keyboard-only action vocabulary.
-        node_dict = graph_nodes[node_id]
-        node_spec = NodeSpec(
-            skill="cua_game",
-            inputs=node_dict.get("inputs") or [],
-            metadata=node_dict.get("metadata") or {},
-        )
-        from cua.skill_game import BrowserGameSkill
-        result = await BrowserGameSkill().run(node_spec)
+        from cua.skill_computer import ComputerSkill
+        result = await ComputerSkill().run(node_spec)
         if not result.elapsed_s:
             result.elapsed_s = time.time() - started
         return result, rendered
